@@ -1,0 +1,44 @@
+module Counter.Main
+
+-- A minimal counter app demonstrating the PecanX client architecture:
+-- Model / Msg / init / update / view. update is pure and its match is
+-- exhaustive; view is pure and builds Html from Html/Attr/Event helpers.
+
+import Html
+import Attr
+import Event
+
+-- The full application state: a single integer count.
+type Model = { count: Int }
+
+-- Every way the user can change the state.
+type Msg =
+  | Increment
+  | Decrement
+  | Reset
+
+-- Start at zero with no effects to run.
+fn init(): (Model, Cmd<Msg>) =
+  ({ count = 0 }, Cmd.none)
+
+-- Pure state transition. The match over Msg is exhaustive, so adding a
+-- new variant would be a compile error until it is handled here.
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    Increment -> ({ ...model, count = model.count + 1 }, Cmd.none)
+    Decrement -> ({ ...model, count = model.count - 1 }, Cmd.none)
+    Reset     -> ({ ...model, count = 0 }, Cmd.none)
+  }
+
+-- Pure view: three buttons and a label. Int.toString is required because
+-- there is no implicit stringify in interpolation.
+fn view(model: Model): Html<Msg> =
+  Html.div([Attr.class("counter")], [
+    Html.button([Event.onClick(Decrement)], [Html.text("-")]),
+    Html.span(
+      [Attr.class("count")],
+      [Html.text("Count: ${Int.toString(model.count)}")]
+    ),
+    Html.button([Event.onClick(Increment)], [Html.text("+")]),
+    Html.button([Event.onClick(Reset)], [Html.text("Reset")])
+  ])

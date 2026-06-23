@@ -1,0 +1,79 @@
+module Todo.Domain exposing (Title, TitleError, Todo, Filter, parseTitle, addTodo, toggle, remove, visibleTodos)
+
+-- The Kernel for the todo example.
+--
+-- This module is pure: no DOM, no effects, no FFI. It holds the
+-- types and business rules, so the compiler places it in the
+-- Kernel (one Wasm module shared by client and server). See
+-- ../../docs/06-effects-and-architecture.md for the Kernel/Shell split.
+
+{- ----------------------------------------------------------------
+   Title: an opaque, always-non-empty todo title.
+
+   The Title constructor is in scope ONLY inside parseTitle, so the
+   rest of the program can never build a Title without going through
+   validation. Read the text back with Title.unwrap.
+   ---------------------------------------------------------------- -}
+
+opaque Title
+
+type TitleError =
+  | Empty
+
+parse parseTitle(raw: String): Result<TitleError, Title> =
+  let trimmed = String.trim(raw)
+  if String.isEmpty(trimmed) then
+    Err(Empty)
+  else
+    Ok(Title(trimmed))
+
+{- ----------------------------------------------------------------
+   Core data
+   ---------------------------------------------------------------- -}
+
+type Todo =
+  { id: Int
+  , title: Title
+  , done: Bool
+  }
+
+type Filter =
+  | All
+  | Active
+  | Completed
+
+{- ----------------------------------------------------------------
+   Pure helpers
+
+   These are ordinary pure functions over Lists, so they live in the
+   Kernel alongside the types they operate on.
+   ---------------------------------------------------------------- -}
+
+-- Prepend a freshly built todo (id assigned by the caller).
+fn addTodo(id: Int, title: Title, list: List<Todo>): List<Todo> =
+  let todo = { id = id, title = title, done = false }
+  [todo, ...list]
+
+-- Flip the done flag of the todo with the given id, leaving the rest
+-- untouched.
+fn toggle(id: Int, list: List<Todo>): List<Todo> =
+  List.map(\todo ->
+    if todo.id == id then
+      { ...todo, done = not todo.done }
+    else
+      todo
+  , list)
+
+-- Remove the todo with the given id.
+fn remove(id: Int, list: List<Todo>): List<Todo> =
+  List.filter(\todo -> todo.id /= id, list)
+
+-- Select the todos that match the active filter. The match over
+-- Filter is exhaustive, so adding a new constructor would force us to
+-- handle it here.
+fn visibleTodos(filter: Filter, list: List<Todo>): List<Todo> =
+  match filter {
+    All -> list
+    Active -> List.filter(\todo -> not todo.done, list)
+    Completed -> List.filter(\todo -> todo.done, list)
+  }

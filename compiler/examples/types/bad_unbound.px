@@ -1,0 +1,3 @@
+module BadUnbound
+-- Type error: reference to a name that isn't in scope.
+fn f(): Int = nope

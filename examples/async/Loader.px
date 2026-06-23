@@ -1,0 +1,21 @@
+module Loader
+
+-- A tiny app that exercises an ASYNCHRONOUS effect. `init` schedules a
+-- Time.delay; when it resolves, `Loaded` is dispatched and the view updates.
+-- Build for the browser with:  pcx build Loader.px --target dom -o Loader.html
+
+type Model = { status: String }
+
+type Msg =
+  | Loaded
+
+fn init(): (Model, Cmd<Msg>) =
+  ({ status = "loading..." }, Time.delay(10, \_ -> Loaded))
+
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    Loaded -> ({ status = "ready!" }, Cmd.none)
+  }
+
+fn view(model: Model): Html<Msg> =
+  Html.div([Attr.id("status")], [Html.text(model.status)])

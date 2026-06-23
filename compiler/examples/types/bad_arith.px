@@ -1,0 +1,3 @@
+module BadArith
+-- Type error: adding an Int and a String.
+fn f(): Int = 1 + "oops"

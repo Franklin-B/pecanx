@@ -1,0 +1,46 @@
+module Edge
+
+-- Stress test: recursion, precedence, nested matches, record update,
+-- guards, Result.map2, booleans, and nested strings inside interpolation.
+
+type Tree =
+  | Leaf(Int)
+  | Node(Tree, Tree)
+
+fn sum(t: Tree): Int =
+  match t {
+    Leaf(n)    -> n
+    Node(l, r) -> sum(l) + sum(r)
+  }
+
+fn prec(): Int =
+  2 + 3 * 4 - 1
+
+fn boolLogic(a: Bool, b: Bool): Bool =
+  a and not b or false
+
+fn grade(score: Int): String =
+  match score {
+    s if s >= 90 -> "A"
+    s if s >= 80 -> "B"
+    _            -> "C"
+  }
+
+fn updated(): Int =
+  let r = { x = 1, y = 2 }
+  let r2 = { ...r, y = 20 }
+  r2.x + r2.y
+
+fn combine(): String =
+  match Result.map2(Ok(1), Ok(2), \(x, y) -> x + y) {
+    Ok(n)  -> "sum ${Int.toString(n)}"
+    Err(_) -> "err"
+  }
+
+fn main(): Unit =
+  let _ = Console.log("tree = ${Int.toString(sum(Node(Leaf(1), Node(Leaf(2), Leaf(3)))))}")
+  let _ = Console.log("prec = ${Int.toString(prec())}")
+  let _ = Console.log("bool = ${if boolLogic(true, false) then "yes" else "no"}")
+  let _ = Console.log("grade = ${grade(85)}")
+  let _ = Console.log("upd = ${Int.toString(updated())}")
+  Console.log("combine = ${combine()}")

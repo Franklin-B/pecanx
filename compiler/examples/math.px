@@ -1,0 +1,23 @@
+module Math
+
+-- Pure integer functions — the kind of side-effect-free numeric code PecanX
+-- places in the Kernel. `pcx build math.px --target wasm` compiles these to a
+-- real .wasm module; `greet` (a String function) is not pure-integer and is
+-- skipped, staying on the JavaScript backend.
+
+fn fib(n: Int): Int =
+  if n < 2 then n else fib(n - 1) + fib(n - 2)
+
+fn fact(n: Int): Int =
+  if n <= 1 then 1 else n * fact(n - 1)
+
+fn gcd(a: Int, b: Int): Int =
+  if b == 0 then a else gcd(b, a % b)
+
+fn poly(x: Int): Int =
+  let sq = x * x
+  let cube = sq * x
+  cube + 2 * sq - 5 * x + 7
+
+fn greet(name: String): String =
+  "hi ${name}"

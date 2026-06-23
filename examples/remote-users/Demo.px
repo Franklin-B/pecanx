@@ -1,0 +1,10 @@
+module RemoteUsers.Demo
+
+-- Runs the full-stack remote-users app headlessly: ClickedLoad triggers the
+-- server fn (synchronous in-memory Db), whose Result flows back as GotUsers.
+-- Prints NotAsked, then Loading, then the Success list.
+
+import RemoteUsers.Main exposing (init, update, view, ClickedLoad)
+
+fn main(): Unit =
+  Program.run(init, update, view, [ClickedLoad])

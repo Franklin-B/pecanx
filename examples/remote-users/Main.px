@@ -1,0 +1,72 @@
+module RemoteUsers.Main
+
+import RemoteUsers.Api exposing (User, LoadError, listUsers)
+
+{- The Model holds the request lifecycle in ONE field of type
+   Remote<e, a>. NotAsked / Loading / Failure / Success make the four
+   states impossible to confuse, and the compiler forces view to handle
+   every one. -}
+type Model =
+  { users: Remote<LoadError, List<User>>
+  }
+
+type Msg =
+  | ClickedLoad
+  | GotUsers(Result<LoadError, List<User>>)
+
+fn init(): (Model, Cmd<Msg>) =
+  ({ users = NotAsked }, Cmd.none)
+
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    -- Kick off the request: flip to Loading and call the server fn.
+    -- Server.call tags the eventual Result with GotUsers.
+    ClickedLoad ->
+      ( { ...model, users = Loading }
+      , Server.call(listUsers(), GotUsers)
+      )
+
+    -- Fold the returned Result into the Remote value.
+    GotUsers(result) ->
+      let next =
+        match result {
+          Ok(users) -> Success(users)
+          Err(err) -> Failure(err)
+        }
+      ({ ...model, users = next }, Cmd.none)
+  }
+
+fn view(model: Model): Html<Msg> =
+  Html.div([Attr.class("remote-users")],
+    [ Html.button([Event.onClick(ClickedLoad)], [Html.text("Load users")])
+    , viewUsers(model.users)
+    ])
+
+-- The whole point of Remote: ONE match that the compiler checks for
+-- exhaustiveness across all four states.
+fn viewUsers(remote: Remote<LoadError, List<User>>): Html<Msg> =
+  match remote {
+    NotAsked ->
+      Html.text("Nothing loaded yet. Press the button.")
+
+    Loading ->
+      Html.text("Loading...")
+
+    Failure(err) ->
+      Html.div([Attr.class("error")], [Html.text(errorToString(err))])
+
+    Success(users) ->
+      Html.ul([Attr.class("user-list")], List.map(viewUser, users))
+  }
+
+fn viewUser(user: User): Html<Msg> =
+  Html.li([],
+    [Html.text("#${Int.toString(user.id)} ${user.name}")])
+
+-- LoadError is a sum type, so this match is exhaustive too.
+fn errorToString(err: LoadError): String =
+  match err {
+    NotConnected -> "Could not reach the server."
+    QueryFailed(reason) -> "The query failed: ${reason}"
+    Empty -> "No users exist yet."
+  }

@@ -1,0 +1,25 @@
+{
+  "name": "pecanx-signup",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n web,api -c blue,green \"vite\" \"tsx watch server/index.ts\"",
+    "web": "vite",
+    "api": "tsx watch server/index.ts",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pecanai-x2": "file:../../..",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "concurrently": "^9.0.1",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

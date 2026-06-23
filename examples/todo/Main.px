@@ -1,0 +1,131 @@
+module Todo.Main exposing (init, update, view)
+
+-- The client app for the todo example.
+--
+-- This module is in JS territory: view builds Html and update wires
+-- up Msgs. All the rules live in Todo.Domain (the Kernel), which we
+-- call into here. See ../../docs/06-effects-and-architecture.md for
+-- the Model/Msg/update/view shape.
+
+import Todo.Domain as Domain exposing (Title, Todo, Filter, All, Active, Completed)
+
+{- ----------------------------------------------------------------
+   Model & Msg
+   ---------------------------------------------------------------- -}
+
+type Model =
+  { todos: List<Todo>
+  , filter: Filter
+  , draft: String
+  , nextId: Int
+  }
+
+type Msg =
+  | ChangedDraft(text: String)
+  | Submitted
+  | Toggled(id: Int)
+  | Deleted(id: Int)
+  | SetFilter(filter: Filter)
+
+fn init(): (Model, Cmd<Msg>) =
+  let model =
+    { todos = []
+    , filter = All
+    , draft = ""
+    , nextId = 1
+    }
+  (model, Cmd.none)
+
+{- ----------------------------------------------------------------
+   Update
+   ---------------------------------------------------------------- -}
+
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    ChangedDraft(text) ->
+      ({ ...model, draft = text }, Cmd.none)
+
+    Submitted ->
+      -- Domain.parseTitle is the only door into a Title. If the draft
+      -- is blank we keep the model unchanged; if it parses we add the
+      -- todo and clear the input.
+      match Domain.parseTitle(model.draft) {
+        Err(_) ->
+          (model, Cmd.none)
+        Ok(title) ->
+          let todos = Domain.addTodo(model.nextId, title, model.todos)
+          ({ ...model, todos = todos, draft = "", nextId = model.nextId + 1 }, Cmd.none)
+      }
+
+    Toggled(id) ->
+      ({ ...model, todos = Domain.toggle(id, model.todos) }, Cmd.none)
+
+    Deleted(id) ->
+      ({ ...model, todos = Domain.remove(id, model.todos) }, Cmd.none)
+
+    SetFilter(filter) ->
+      ({ ...model, filter = filter }, Cmd.none)
+  }
+
+{- ----------------------------------------------------------------
+   View
+   ---------------------------------------------------------------- -}
+
+fn view(model: Model): Html<Msg> =
+  let shown = Domain.visibleTodos(model.filter, model.todos)
+  Html.div([Attr.class("todo-app")],
+    [ viewInput(model.draft)
+    , viewList(shown)
+    , viewFilters(model.filter)
+    ])
+
+fn viewInput(draft: String): Html<Msg> =
+  Html.div([Attr.class("todo-new")],
+    [ Html.input(
+        [ Attr.class("todo-input")
+        , Attr.placeholder("What needs doing?")
+        , Attr.value(draft)
+        , Event.onInput(\text -> ChangedDraft(text))
+        ])
+    , Html.button([Event.onClick(Submitted)], [Html.text("Add")])
+    ])
+
+fn viewList(todos: List<Todo>): Html<Msg> =
+  if List.isEmpty(todos) then
+    Html.div([Attr.class("todo-empty")], [Html.text("Nothing here yet.")])
+  else
+    Html.div([Attr.class("todo-list")], List.map(viewTodo, todos))
+
+fn viewTodo(todo: Todo): Html<Msg> =
+  -- Read the validated text back out of the opaque Title, and render
+  -- a different label for each done state (exhaustive on Bool).
+  let label = Title.unwrap(todo.title)
+  let status =
+    match todo.done {
+      true -> "done"
+      false -> "active"
+    }
+  Html.div([Attr.class("todo-item ${status}")],
+    [ Html.button(
+        [Event.onClick(Toggled(todo.id))],
+        [Html.text(if todo.done then "Undo" else "Done")])
+    , Html.text(label)
+    , Html.button(
+        [Event.onClick(Deleted(todo.id))],
+        [Html.text("Delete")])
+    ])
+
+fn viewFilters(current: Filter): Html<Msg> =
+  Html.div([Attr.class("todo-filters")],
+    [ filterButton("All", All, current)
+    , filterButton("Active", Active, current)
+    , filterButton("Completed", Completed, current)
+    ])
+
+fn filterButton(caption: String, filter: Filter, current: Filter): Html<Msg> =
+  let active = if filter == current then "is-active" else ""
+  Html.button(
+    [ Attr.class("todo-filter ${active}")
+    , Event.onClick(SetFilter(filter))
+    ],
+    [Html.text(caption)])

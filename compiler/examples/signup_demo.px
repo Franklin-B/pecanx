@@ -1,0 +1,53 @@
+module Demo
+
+-- A self-contained PecanX program the pcx compiler can actually run.
+-- It exercises: opaque types + parse, sum types, records, tuples, nested
+-- pattern matching, Result/Option, the stdlib, string interpolation, and main.
+
+opaque Email
+opaque Age
+
+type FieldError =
+  | Empty
+  | BadEmailFormat
+  | TooYoung(min: Int)
+
+parse parseEmail(raw: String): Result<FieldError, Email> =
+  let s = String.trim(raw)
+  if String.isEmpty(s) then Err(Empty)
+  else if not (String.contains(s, "@")) then Err(BadEmailFormat)
+  else Ok(Email(s))
+
+parse parseAge(raw: String): Result<FieldError, Age> =
+  match Int.parse(raw) {
+    None -> Err(Empty)
+    Some(n) -> if n < 18 then Err(TooYoung(min = 18)) else Ok(Age(n))
+  }
+
+type Person = { email: Email, age: Age }
+
+-- The same validate() that a real app would run on BOTH client and server.
+fn validate(rawEmail: String, rawAge: String): Result<FieldError, Person> =
+  match (parseEmail(rawEmail), parseAge(rawAge)) {
+    (Ok(e), Ok(a)) -> Ok({ email = e, age = a })
+    (Err(err), _)  -> Err(err)
+    (_, Err(err))  -> Err(err)
+  }
+
+fn describe(r: Result<FieldError, Person>): String =
+  match r {
+    Ok(p)               -> "OK   ${Email.unwrap(p.email)} (age ${Int.toString(Age.unwrap(p.age))})"
+    Err(Empty)          -> "FAIL a required field was empty"
+    Err(BadEmailFormat) -> "FAIL that does not look like an email"
+    Err(TooYoung(min))  -> "FAIL must be at least ${Int.toString(min)}"
+  }
+
+fn main(): Unit =
+  let cases = [
+    ("ada@example.com", "21"),
+    ("nope", "30"),
+    ("grace@example.com", "12"),
+    ("", "40")
+  ]
+  let lines = List.map(\c -> match c { (em, ag) -> describe(validate(em, ag)) }, cases)
+  Console.log(String.join("\n", lines))

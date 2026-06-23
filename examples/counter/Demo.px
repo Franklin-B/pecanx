@@ -1,0 +1,10 @@
+module Counter.Demo
+
+-- Runs the counter app headlessly through pcx's minimal effect runtime,
+-- scripting a sequence of messages and printing the rendered view after each.
+--   node ../../compiler/pcx.js run Demo.px
+
+import Counter.Main exposing (init, update, view, Increment, Decrement, Reset)
+
+fn main(): Unit =
+  Program.run(init, update, view, [Increment, Increment, Increment, Decrement, Reset])

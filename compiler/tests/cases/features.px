@@ -1,0 +1,39 @@
+module Features
+
+-- Exercises a broad slice of the language for the test suite.
+
+type Shape =
+  | Circle(r: Float)
+  | Rect(w: Float, h: Float)
+
+fn area(s: Shape): Float =
+  match s {
+    Circle(r)  -> 3.14 * r * r
+    Rect(w, h) -> w * h
+  }
+
+fn classify(n: Int): String =
+  match n {
+    0          -> "zero"
+    x if x < 0 -> "negative"
+    _          -> "positive"
+  }
+
+fn sumList(xs: List<Int>): Int =
+  List.foldl(\(x, acc) -> acc + x, 0, xs)
+
+fn label(xs: List<Int>): String =
+  match xs {
+    []               -> "empty"
+    [only]           -> "one: ${Int.toString(only)}"
+    [first, ...rest] -> "head ${Int.toString(first)}, ${Int.toString(List.length(rest))} more"
+  }
+
+fn main(): Unit =
+  let _ = Console.log("area circle = ${Float.toString(area(Circle(2.0)))}")
+  let _ = Console.log("area rect = ${Float.toString(area(Rect(3.0, 4.0)))}")
+  let _ = Console.log("classify -3 = ${classify(-3)}")
+  let _ = Console.log("pipe 5 = ${5 |> classify}")
+  let _ = Console.log("sum = ${Int.toString(sumList([1, 2, 3, 4]))}")
+  let _ = Console.log("label = ${label([10, 20, 30])}")
+  Console.log("opt = ${Int.toString(Option.withDefault(0, Int.parse("42")))}")

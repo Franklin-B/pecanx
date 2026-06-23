@@ -1,0 +1,4 @@
+module BadArg
+-- Type error: passing a Bool where an Int is expected.
+fn inc(n: Int): Int = n + 1
+fn g(): Int = inc(true)

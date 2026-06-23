@@ -1,0 +1,15 @@
+module Bad
+
+-- This program is INTENTIONALLY wrong: the match below forgets the Blue case.
+-- `pcx check` should reject it with PX0001 (non-exhaustive match).
+
+type Color =
+  | Red
+  | Green
+  | Blue
+
+fn name(c: Color): String =
+  match c {
+    Red   -> "red"
+    Green -> "green"
+  }

@@ -1,0 +1,18 @@
+module Todo.Demo
+
+-- Runs the todo app headlessly: add two items, then switch the filter.
+-- Imports the Msg constructors from Todo.Main and Filter constructors from
+-- Todo.Domain — exercising cross-module linking across three modules.
+
+import Todo.Main exposing (init, update, view, ChangedDraft, Submitted, Toggled, SetFilter)
+import Todo.Domain exposing (Active)
+
+fn main(): Unit =
+  Program.run(init, update, view, [
+    ChangedDraft("Buy milk"),
+    Submitted,
+    ChangedDraft("Walk dog"),
+    Submitted,
+    Toggled(1),
+    SetFilter(Active)
+  ])

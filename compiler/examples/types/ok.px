@@ -1,0 +1,14 @@
+module TypesOk
+
+-- Well-typed under `pcx check --types`: higher-order functions, application,
+-- lists, tuples, let-bindings, and (trusted) stdlib calls.
+
+fn double(n: Int): Int = n * 2
+
+fn apply(f: Int -> Int, x: Int): Int = f(x)
+
+fn main(): Unit =
+  let xs = [1, 2, 3]
+  let pair = (1, true)
+  let y = apply(double, 21)
+  Console.log(Int.toString(y))

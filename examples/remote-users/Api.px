@@ -1,0 +1,35 @@
+module RemoteUsers.Api exposing (User, LoadError, listUsers)
+
+{- The shared shape that travels between server and client.
+   Because this record only uses pure primitives, it lands in the
+   Kernel (one Wasm module) and is reused by both ends untouched. -}
+type User =
+  { id: Int
+  , name: String
+  }
+
+-- Every failure mode listUsers can hand back is named here, so update
+-- and view can pattern match on it without a catch-all.
+type LoadError =
+  | NotConnected
+  | QueryFailed(reason: String)
+  | Empty
+
+-- A server fn lives only on the server. Its body is an effect { } block,
+-- so it may touch Db.*; the result is wired back to the client as a
+-- Result that the Remote type can absorb.
+server fn listUsers(): Result<LoadError, List<User>> =
+  effect {
+    let! outcome = Db.query("SELECT id, name FROM users ORDER BY id")
+    match outcome {
+      Err(dbErr) ->
+        Err(QueryFailed(Db.errorToString(dbErr)))
+
+      Ok(rows) ->
+        let users = List.map(\row -> { id = row.id, name = row.name }, rows)
+        if List.isEmpty(users) then
+          Err(Empty)
+        else
+          Ok(users)
+    }
+  }

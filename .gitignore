@@ -1,0 +1,7 @@
+# dependencies
+node_modules/
+
+# build artifacts
+dist/
+*.wasm
+*.mjs

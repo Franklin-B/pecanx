@@ -1,0 +1,138 @@
+# PecanX
+
+**A correctness-first language for full-stack web applications.** PecanX compiles
+your pure logic to a single **Kernel** (a WebAssembly module that runs identically
+on the client and the server) and your interface code to JavaScript — so the
+validation, business rules, and types you write once can never drift between the
+browser and the backend.
+
+> Part of the PecanAI / PecanAI-X family.
+> Compiler: `pcx` · Source files: `.px` · Package registry: **Orchard**
+
+---
+
+## Why PecanX exists
+
+Most web bugs are not exotic. They are the same four families, over and over:
+
+1. **`null` / `undefined`** where a value was expected.
+2. **Unhandled errors** crashing a request or a render.
+3. **"Impossible" UI states** — loading *and* error at once, data that's both present and absent.
+4. **Client/server drift** — the front end and back end disagree about what's valid.
+
+PecanX is designed so that **all four become compile errors instead of runtime
+incidents.** It does this with a small, sharp set of ideas — sum types,
+exhaustive matching, no `null`, errors-as-values, "parse, don't validate," and a
+single shared Kernel — rather than a large feature surface.
+
+It is not *more powerful* in the Turing sense (nothing is). It is more powerful in
+the sense that matters in production: **fewer ways to be wrong.**
+
+## The shell-and-kernel model
+
+A pecan is a hard protective **shell** around an edible **kernel**. PecanX borrows
+the metaphor literally:
+
+- **Kernel** — the pure heart of your program: types, validation, business rules.
+  It is side-effect-free, so the compiler can put it in one Wasm module and run it
+  on *both* sides. Client-side and server-side validation are then the *same code*,
+  not two implementations that hopefully agree.
+- **Shell** — the type system and the **quarantined FFI**. Nothing reaches the
+  Kernel without passing through the Shell. "Cracking the shell" (calling raw
+  JavaScript) is possible but explicitly marked, typed, and contained — see
+  [docs/08-ffi.md](docs/08-ffi.md).
+
+```
+        ┌──────────────────────────── Shell ────────────────────────────┐
+        │  type system · exhaustiveness · quarantined JS interop         │
+        │                                                                │
+        │     ┌───────────────────── Kernel ──────────────────────┐      │
+        │     │  pure logic → one Wasm module                      │      │
+        │     │  the SAME validation runs on client AND server     │      │
+        │     └────────────────────────────────────────────────────┘      │
+        └────────────────────────────────────────────────────────────────┘
+            view / DOM / Web APIs  →  JavaScript     server fn  →  backend
+```
+
+## A taste
+
+```px
+module Signup.Domain
+
+-- A value of this type cannot exist unless it passed validation.
+opaque Email
+
+parse email(raw: String): Result<FieldError, Email> =
+  let s = String.trim(raw)
+  if String.isEmpty(s) then Err(Empty)
+  else if not (String.contains(s, "@")) then Err(BadFormat)
+  else Ok(Email(s))
+
+-- Defined once. Runs in the browser for instant feedback AND on the
+-- server as the authority. They cannot disagree — it's one Kernel.
+fn validate(raw: RawSignup): Result<Errors, SignupRequest> = ...
+```
+
+The full worked example — a signup form whose validation runs on both sides — is in
+[docs/10-tutorial-signup.md](docs/10-tutorial-signup.md), and a **runnable**
+TypeScript + Zod implementation of the same idea lives in
+[`examples/pecanx-signup`](examples/pecanx-signup) (the reference implementation you
+can run today while the PecanX toolchain itself is built).
+
+## Documentation
+
+| # | Doc | What it covers |
+|---|-----|----------------|
+| 00 | [Overview](docs/00-overview.md) | Philosophy, the Kernel/Shell model, how PecanX compares to Elm, Rust, Gleam, F# |
+| 01 | [Getting started](docs/01-getting-started.md) | Install `pcx`, project layout, the build model, `orchard` |
+| 02 | [Syntax basics](docs/02-syntax-basics.md) | Values, bindings, functions, modules, operators |
+| 03 | [Types](docs/03-types.md) | Records, sum types, generics, opaque types, no `null` |
+| 04 | [Pattern matching](docs/04-pattern-matching.md) | `match`, exhaustiveness, guards, destructuring |
+| 05 | [Errors & validation](docs/05-errors-and-validation.md) | `Result`, `Option`, "parse, don't validate" |
+| 06 | [Effects & architecture](docs/06-effects-and-architecture.md) | Model / Msg / update / view, `Cmd`, `effect` blocks |
+| 07 | [Full-stack](docs/07-full-stack.md) | `server fn`, the Kernel split, isomorphic validation |
+| 08 | [FFI](docs/08-ffi.md) | The quarantined JavaScript boundary |
+| 09 | [Standard library](docs/09-stdlib.md) | Core modules reference |
+| 10 | [Tutorial: signup form](docs/10-tutorial-signup.md) | The whole thing, end to end |
+| 11 | [Cookbook & snippet catalog](docs/11-cookbook.md) | 30+ categorized, copy-pasteable snippets for dissemination |
+
+### Reference
+
+| Doc | What it covers |
+|-----|----------------|
+| [Glossary](docs/glossary.md) | Definitions of every PecanX concept and term |
+| [Language dictionary](docs/dictionary.md) | Every keyword, operator, and built-in type, plus a full stdlib symbol index |
+| [Appendix A · Grammar & syntax](docs/appendix-a-grammar.md) | Lexical grammar, formal EBNF, reserved words, operator precedence, cheat sheet |
+| [Appendix B · Tooling & reference](docs/appendix-b-reference.md) | `pecanx.toml` schema, `pcx`/`orchard` CLI, compiler diagnostic catalog, language comparison, roadmap |
+
+### Examples
+
+Complete example apps for dissemination live in [`examples/`](examples/README.md):
+
+| Example | Demonstrates | Runnable? |
+|---------|--------------|-----------|
+| [pecanx-signup](examples/pecanx-signup) | Isomorphic client/server validation (TypeScript + Zod reference) | **Yes** — `cd examples/pecanx-signup && npm run dev` |
+| [counter](examples/counter) | The Model / Msg / update / view architecture | Illustrative `.px` |
+| [todo](examples/todo) | Opaque types + `parse`, sum types, list ops, exhaustive `match` | Illustrative `.px` |
+| [remote-users](examples/remote-users) | `server fn` + `Server.call` + `Remote<e,a>` rendering | Illustrative `.px` |
+
+## Status
+
+PecanX is a **language design with a working compiler and a runnable reference app.**
+
+- **`pcx` v0.1** — a real, zero-dependency compiler in [`compiler/`](compiler): it
+  lexes, parses, checks `match` exhaustiveness, **infers and checks types**
+  (Hindley-Milner, `--types`), **links multiple modules**, and compiles to
+  **JavaScript, WebAssembly** (the pure-integer Kernel — real `.wasm`), or a
+  **real-DOM browser app** (`--target dom`, wired events + async effects). It runs
+  whole Model/Msg/update/view apps — the [counter](examples/counter),
+  [todo](examples/todo), and [remote-users](examples/remote-users) examples each
+  run via a `Demo.px` driver (`node compiler/pcx.js run examples/counter/Demo.px`).
+  Its test suite is 24 end-to-end cases.
+- **`pecanx-signup`** — the TypeScript + Zod reference app demonstrating isomorphic
+  validation on a production stack ([examples/pecanx-signup](examples/pecanx-signup)).
+
+Still ahead: Wasm beyond the integer Kernel (WasmGC), cross-module type inference,
+and a virtual-DOM-diffing production runtime — see
+[Appendix B · Roadmap](docs/appendix-b-reference.md). These docs describe the
+language as designed; forward-looking parts are marked.
