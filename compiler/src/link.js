@@ -1,4 +1,4 @@
-// Cross-module resolution for pcx (v0.2).
+// Cross-module resolution for pcx (v0.3).
 //
 // Given an entry .px file, scans its directory tree for sibling modules, matches
 // `import` declarations to modules by their `module` header (not by path), and

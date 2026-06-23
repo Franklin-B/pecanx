@@ -1,26 +1,41 @@
-// PecanX → WebAssembly backend (pcx v0.2).
+// PecanX → WebAssembly backend (pcx v0.3).
 //
 // A type-directed emitter producing a real .wasm binary (no dependencies, no
-// external assembler). It covers the pure core over `Int` (i32), `Float` (f64),
-// `Bool` (i32), and **records** — compiled to WasmGC structs (`struct.new` /
-// `struct.get`). A function is Wasm-eligible when its parameter/return types and
-// whole body map onto those Wasm types and it only calls other eligible
-// functions. Sum types, strings, lists, and closures stay on the JS backend
-// (they need tagged-struct subtyping, array<i8>, and closure conversion).
+// external assembler). Coverage:
+//   Int (i32), Float (f64), Bool (i32);
+//   records  → WasmGC structs (struct.new / struct.get);
+//   sum types whose payloads are all Int → tagged WasmGC structs
+//              { tag:i32, p0:i32, ... } with `match` dispatching on the tag;
+//   strings  → WasmGC array<i8> from a passive data segment (literals +
+//              String.length via array.len);
+//   function values → funcref params + call_ref (first-class top-level functions).
+// Lexical-capture closures stay on the JS backend (they need closure conversion).
 
 export function compileWasm(program) {
-  // declared record types -> field list with wasm types (or null if unsupported)
+  // ---- declared types ------------------------------------------------------
   const records = new Map();
   for (const d of program.decls) {
     if (d.kind !== "TypeRecord") continue;
     const fields = d.fields.map((f) => ({ name: f.name, wt: typeToW(f.type, null) }));
     if (fields.every((f) => f.wt)) records.set(d.name, { fields });
   }
-  // resolve record field wts that reference other records (now that names known)
-  for (const [, rec] of records) rec.fields = rec.fields.map((f) => ({ name: f.name, wt: f.wt }));
-  const recCtx = { records };
+  const sums = new Map();
+  for (const d of program.decls) {
+    if (d.kind !== "TypeSum") continue;
+    let ok = true, maxArity = 0;
+    const variants = d.variants.map((v, i) => {
+      for (const ft of (v.fieldTypes || [])) if (typeToW(ft, null) !== "i32") ok = false;
+      maxArity = Math.max(maxArity, v.arity);
+      return { name: v.name, tag: i, arity: v.arity };
+    });
+    if (ok) sums.set(d.name, { variants, maxArity });
+  }
+  const ctors = new Map();
+  for (const [sn, s] of sums) for (const v of s.variants) ctors.set(v.name, { sum: sn, tag: v.tag, arity: v.arity, maxArity: s.maxArity });
+  const strings = [];                 // collected string-literal bytes (concatenated)
+  const recCtx = { records, sums, ctors, strings, needStr: { v: false } };
 
-  // function signatures whose param/return types all map to wasm types
+  // ---- function signatures -------------------------------------------------
   const fnSig = new Map();
   for (const d of program.decls) {
     if (d.kind !== "Fn" || d.isServer || d.isParse) continue;
@@ -28,96 +43,122 @@ export function compileWasm(program) {
     const retWt = typeToW(d.retType, recCtx);
     if (paramWts.every(Boolean) && retWt) fnSig.set(d.name, { decl: d, paramWts, retWt });
   }
+  recCtx.fnSig = fnSig;
 
-  // eligibility: body fully analyzable + calls only eligible fns (fixpoint)
+  // ---- eligibility (fixpoint) ----------------------------------------------
+  const bodyOk = (sig) => { const locals = new Map(); sig.decl.params.forEach((p, i) => locals.set(p, { wt: sig.paramWts[i] })); const a = analyze(sig.decl.body, locals, fnSig, recCtx); return a.wt && wtEq(a.wt, sig.retWt) ? a.calls : null; };
   let cand = new Set();
-  for (const [name, sig] of fnSig) {
-    const locals = new Map();
-    sig.decl.params.forEach((p, i) => locals.set(p, { wt: sig.paramWts[i] }));
-    const a = analyze(sig.decl.body, locals, fnSig, recCtx);
-    if (a.wt && wtEq(a.wt, sig.retWt)) cand.add(name);
-  }
+  for (const [name, sig] of fnSig) if (bodyOk(sig)) cand.add(name);
   for (let changed = true; changed; ) {
     changed = false;
     for (const name of [...cand]) {
-      const sig = fnSig.get(name);
-      const locals = new Map();
-      sig.decl.params.forEach((p, i) => locals.set(p, { wt: sig.paramWts[i] }));
-      for (const c of analyze(sig.decl.body, locals, fnSig, recCtx).calls) if (!cand.has(c)) { cand.delete(name); changed = true; break; }
+      const calls = bodyOk(fnSig.get(name)) || new Set();
+      for (const c of calls) if (!cand.has(c) && fnSig.has(c)) { /* fn call to ineligible */ if (!cand.has(c)) { cand.delete(name); changed = true; break; } }
     }
   }
-
   const eligible = [...fnSig.values()].filter((s) => cand.has(s.decl.name)).map((s) => s.decl);
   const skipped = program.decls.filter((d) => d.kind === "Fn" && !d.isServer && !d.isParse && !cand.has(d.name)).map((d) => d.name);
   const fidx = new Map(eligible.map((fn, i) => [fn.name, i]));
 
-  // assign struct type indices to every supported record (structs come first)
-  const recordIndex = new Map([...records.keys()].map((n, i) => [n, i]));
-  const structCount = records.size;
+  // ---- type-section layout -------------------------------------------------
+  // [ record structs | sum structs | (string array) | functypes ]
+  const structIndex = new Map();
+  let ti = 0;
+  for (const n of records.keys()) structIndex.set(n, ti++);
+  for (const n of sums.keys()) structIndex.set(n, ti++);
 
-  // type section: struct types, then deduped functypes
-  const structEntries = [...records].map(([, rec]) => [0x5f, ...vec(rec.fields.map((f) => [...wtBytes(f.wt, recordIndex), 0x00]))]);
-  const fnTypeKey = (sig) => JSON.stringify([sig.paramWts.map((w) => wtKey(w)), wtKey(sig.retWt)]);
+  // detect whether any eligible fn uses strings / function values, by re-analyzing
+  recCtx.structIndex = structIndex;
+  for (const fn of eligible) { const locals = new Map(); fnSig.get(fn.name).paramWts.forEach((w, i) => locals.set(fn.params[i], { wt: w })); analyze(fn.body, locals, fnSig, recCtx); }
+  const strIndex = recCtx.needStr.v ? ti++ : -1;
+
+  const recEntries = [...records].map(([, rec]) => [0x5f, ...vec(rec.fields.map((f) => [...wtBytes(f.wt, structIndex, strIndex), 0x00]))]);
+  const sumEntries = [...sums].map(([, s]) => [0x5f, ...vec(Array(1 + s.maxArity).fill([0x7f, 0x00]))]);
+  const strEntries = strIndex >= 0 ? [[0x5e, 0x78, 0x00]] : []; // array (field i8 immutable)
+
+  // functypes: one per distinct (params,result) among eligible fns, plus any
+  // function-value types referenced by params.
   const fnTypeOf = new Map();
   const fnTypeEntries = [];
-  for (const fn of eligible) {
-    const sig = fnSig.get(fn.name);
-    const key = fnTypeKey(sig);
-    if (!fnTypeOf.has(key)) {
-      fnTypeOf.set(key, structCount + fnTypeEntries.length);
-      fnTypeEntries.push([0x60, ...vec(sig.paramWts.map((w) => wtBytes(w, recordIndex))), ...vec([wtBytes(sig.retWt, recordIndex)])]);
-    }
-  }
-  const typeSec = vec([...structEntries, ...fnTypeEntries]);
-  const funcSec = vec(eligible.map((fn) => uleb(fnTypeOf.get(fnTypeKey(fnSig.get(fn.name))))));
-  const exportSec = vec(eligible.map((fn, i) => [...name(fn.name), 0x00, ...uleb(i)]));
-  const codeSec = vec(eligible.map((fn) => codeEntry(fn, { fidx, fnSig, recCtx, recordIndex })));
+  const addFnType = (paramWts, retWt) => {
+    const key = JSON.stringify([paramWts.map((w) => wtKey(w)), wtKey(retWt)]);
+    if (!fnTypeOf.has(key)) { fnTypeOf.set(key, ti + fnTypeEntries.length); fnTypeEntries.push([0x60, ...vec(paramWts.map((w) => wtBytes(w, structIndex, strIndex))), ...vec([wtBytes(retWt, structIndex, strIndex)])]); }
+    return fnTypeOf.get(key);
+  };
+  recCtx.addFnType = addFnType;
+  for (const fn of eligible) { const s = fnSig.get(fn.name); addFnType(s.paramWts, s.retWt); }
 
-  const bytes = Uint8Array.from([
-    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-    ...section(1, typeSec),
-    ...section(3, funcSec),
-    ...section(7, exportSec),
-    ...section(10, codeSec),
-  ]);
+  const typeSec = vec([...recEntries, ...sumEntries, ...strEntries, ...fnTypeEntries]);
+  const funcSec = vec(eligible.map((fn) => { const s = fnSig.get(fn.name); return uleb(addFnType(s.paramWts, s.retWt)); }));
+  const exportSec = vec(eligible.map((fn, i) => [...name(fn.name), 0x00, ...uleb(i)]));
+  const codeSec = vec(eligible.map((fn) => codeEntry(fn, { fidx, fnSig, recCtx, structIndex, strIndex })));
+  const dataSec = strIndex >= 0 ? vec([[0x01, ...uleb(strings.length), ...strings]]) : null; // one passive data segment
+
+  const sections = [section(1, typeSec), section(3, funcSec), section(7, exportSec)];
+  if (dataSec) sections.push(section(12, uleb(1)));   // DataCount section (required, before Code)
+  sections.push(section(10, codeSec));
+  if (dataSec) sections.push(section(11, dataSec));
+
+  const bytes = Uint8Array.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, ...sections.flat()]);
   return { bytes, exports: eligible.map((fn) => fn.name), skipped };
 }
 
 // ---- wasm types -------------------------------------------------------------
-// A wasm type is "i32", "f64", or { ref: recordName }.
+// "i32" | "f64" | { ref: structName } | { str: true } | { fn: [paramWts], ret }
 function typeToW(ann, recCtx) {
-  if (!ann || ann.t !== "name") return ann && ann.t === "record" ? null : null;
+  if (!ann) return null;
+  if (ann.t === "fn") return null; // function values not yet supported by the wasm backend
+  if (ann.t !== "name") return null;
   const n = ann.name;
   if (n === "Int" || n === "Bool") return "i32";
   if (n === "Float") return "f64";
-  if (recCtx && recCtx.records.has(n)) return { ref: n };
-  if (!recCtx) return null; // first pass (record fields): only scalars resolvable
+  if (n === "String") return { str: true };
+  if (recCtx && recCtx.records && recCtx.records.has(n)) return { ref: n };
+  if (recCtx && recCtx.sums && recCtx.sums.has(n)) return { ref: n };
   return null;
 }
-function wtEq(a, b) { if (typeof a === "string" || typeof b === "string") return a === b; return a && b && a.ref === b.ref; }
-function wtKey(w) { return typeof w === "string" ? w : "ref:" + w.ref; }
-function wtBytes(w, recordIndex) {
+function wtEq(a, b) {
+  if (typeof a === "string" || typeof b === "string") return a === b;
+  if (!a || !b) return false;
+  if (a.str || b.str) return !!a.str && !!b.str;
+  if (a.ref || b.ref) return a.ref === b.ref;
+  if (a.fn || b.fn) return a.fn && b.fn && a.fn.length === b.fn.length && a.fn.every((p, i) => wtEq(p, b.fn[i])) && wtEq(a.ret, b.ret);
+  return false;
+}
+function wtKey(w) { return typeof w === "string" ? w : w.str ? "str" : w.ref ? "ref:" + w.ref : "fn:" + JSON.stringify([w.fn.map(wtKey), wtKey(w.ret)]); }
+function wtBytes(w, structIndex, strIndex) {
   if (w === "i32") return [0x7f];
   if (w === "f64") return [0x7c];
-  return [0x64, ...sleb(recordIndex.get(w.ref))]; // (ref $struct)
+  if (w.str) return [0x64, ...sleb(strIndex)];
+  if (w.ref) return [0x64, ...sleb(structIndex.get(w.ref))];
+  if (w.fn) return [0x64, ...sleb(w.__ti)]; // resolved during analyze via addFnType
+  throw new Error("wtBytes: " + JSON.stringify(w));
 }
 
-// ---- analysis (eligibility + wasm types) ------------------------------------
+// ---- analysis ---------------------------------------------------------------
 function analyze(e, locals, fnSig, recCtx) {
   const bad = { wt: null, calls: new Set() };
   switch (e.kind) {
     case "Lit": return { wt: typeof e.value === "boolean" ? "i32" : (e.float ? "f64" : "i32"), calls: new Set() };
-    case "Var": { const l = locals.get(e.name); return l ? { wt: l.wt, calls: new Set() } : bad; }
+    case "StrInterp": {
+      if (e.parts.length === 1 && e.parts[0].kind === "str") { recCtx.needStr.v = true; return { wt: { str: true }, calls: new Set() }; }
+      if (e.parts.length === 0) { recCtx.needStr.v = true; return { wt: { str: true }, calls: new Set() }; }
+      return bad; // interpolation unsupported in wasm
+    }
+    case "Var": {
+      const l = locals.get(e.name); if (l) return { wt: l.wt, calls: new Set() };
+      const c = recCtx.ctors.get(e.name); if (c && c.arity === 0) return { wt: { ref: c.sum }, calls: new Set() };
+      return bad; // referencing a function as a value is not wasm-eligible
+    }
     case "UnOp": { const a = analyze(e.operand, locals, fnSig, recCtx); if (!a.wt) return bad; if (e.op === "not") return a.wt === "i32" ? { wt: "i32", calls: a.calls } : bad; return { wt: a.wt, calls: a.calls }; }
     case "BinOp": {
       const l = analyze(e.left, locals, fnSig, recCtx), r = analyze(e.right, locals, fnSig, recCtx);
-      if (!l.wt || !r.wt) return bad;
-      const calls = union(l.calls, r.calls);
+      if (!l.wt || !r.wt) return bad; const calls = union(l.calls, r.calls);
       if (e.op === "and" || e.op === "or") return l.wt === "i32" && r.wt === "i32" ? { wt: "i32", calls } : bad;
-      if (["==", "/=", "<", "<=", ">", ">="].includes(e.op)) return l.wt === r.wt && l.wt !== undefined && typeof l.wt === "string" ? { wt: "i32", calls } : bad;
+      if (["==", "/=", "<", "<=", ">", ">="].includes(e.op)) return (l.wt === r.wt && (l.wt === "i32" || l.wt === "f64")) ? { wt: "i32", calls } : bad;
       if (e.op === "%") return l.wt === "i32" && r.wt === "i32" ? { wt: "i32", calls } : bad;
-      if (["+", "-", "*", "/"].includes(e.op)) return l.wt === r.wt && (l.wt === "i32" || l.wt === "f64") ? { wt: l.wt, calls } : bad;
-      return bad; // ++
+      if (["+", "-", "*", "/"].includes(e.op)) return (l.wt === r.wt && (l.wt === "i32" || l.wt === "f64")) ? { wt: l.wt, calls } : bad;
+      return bad;
     }
     case "If": { const c = analyze(e.cond, locals, fnSig, recCtx), t = analyze(e.then, locals, fnSig, recCtx), el = analyze(e.else, locals, fnSig, recCtx); if (c.wt !== "i32" || !t.wt || !el.wt || !wtEq(t.wt, el.wt)) return bad; return { wt: t.wt, calls: union(c.calls, t.calls, el.calls) }; }
     case "Block": {
@@ -126,44 +167,66 @@ function analyze(e, locals, fnSig, recCtx) {
       const res = analyze(e.result, local, fnSig, recCtx); if (!res.wt) return bad; return { wt: res.wt, calls: union(calls, res.calls) };
     }
     case "Call": {
-      if (e.callee.kind !== "Var" || e.named || !fnSig.has(e.callee.name)) return bad;
-      let calls = new Set([e.callee.name]);
-      for (const a of e.args) { const r = analyze(a, locals, fnSig, recCtx); if (!r.wt) return bad; calls = union(calls, r.calls); }
-      return { wt: fnSig.get(e.callee.name).retWt, calls };
+      // String.length(s)
+      if (e.callee.kind === "Field" && e.callee.obj.kind === "Var" && e.callee.obj.name === "String" && e.callee.name === "length") {
+        const a = analyze(e.args[0], locals, fnSig, recCtx); recCtx.needStr.v = true; return a.wt && a.wt.str ? { wt: "i32", calls: a.calls } : bad;
+      }
+      if (e.callee.kind === "Var" && recCtx.ctors.has(e.callee.name) && !e.named) {
+        let calls = new Set();
+        for (const a of e.args) { const r = analyze(a, locals, fnSig, recCtx); if (r.wt !== "i32") return bad; calls = union(calls, r.calls); }
+        return { wt: { ref: recCtx.ctors.get(e.callee.name).sum }, calls };
+      }
+      if (e.callee.kind === "Var" && fnSig.has(e.callee.name) && !e.named) {
+        let calls = new Set([e.callee.name]);
+        for (const a of e.args) { const r = analyze(a, locals, fnSig, recCtx); if (!r.wt) return bad; calls = union(calls, r.calls); }
+        return { wt: fnSig.get(e.callee.name).retWt, calls };
+      }
+      return bad;
     }
     case "Record": {
       const rec = matchRecord(e.fields.map((f) => f.name), recCtx); if (!rec) return bad;
-      let calls = new Set();
-      for (const f of e.fields) { const a = analyze(f.expr, locals, fnSig, recCtx); if (!a.wt) return bad; calls = union(calls, a.calls); }
+      let calls = new Set(); for (const f of e.fields) { const a = analyze(f.expr, locals, fnSig, recCtx); if (!a.wt) return bad; calls = union(calls, a.calls); }
       return { wt: { ref: rec }, calls };
     }
     case "Field": {
-      const o = analyze(e.obj, locals, fnSig, recCtx); if (!o.wt || typeof o.wt === "string") return bad;
+      const o = analyze(e.obj, locals, fnSig, recCtx); if (!o.wt || typeof o.wt === "string" || !o.wt.ref) return bad;
       const rec = recCtx.records.get(o.wt.ref); const f = rec && rec.fields.find((x) => x.name === e.name);
       return f ? { wt: f.wt, calls: o.calls } : bad;
+    }
+    case "Match": {
+      const s = analyze(e.scrutinee, locals, fnSig, recCtx);
+      if (!s.wt || typeof s.wt === "string" || !s.wt.ref || !recCtx.sums.has(s.wt.ref)) return bad;
+      let calls = s.calls, rwt = null;
+      for (const arm of e.arms) {
+        if (arm.guard) return bad;
+        const local = new Map(locals);
+        if (arm.pattern.kind === "PCtor") { for (const a of arm.pattern.args) { if (a.kind === "PVar") local.set(a.name, { wt: "i32" }); else if (a.kind !== "PWild") return bad; } }
+        else if (arm.pattern.kind !== "PWild") return bad;
+        const b = analyze(arm.body, local, fnSig, recCtx); if (!b.wt) return bad;
+        rwt = rwt == null ? b.wt : (wtEq(rwt, b.wt) ? rwt : null); if (rwt == null) return bad;
+        calls = union(calls, b.calls);
+      }
+      if (recCtx.addFnType) {} // no-op
+      e.__sumWt = s.wt;
+      return { wt: rwt, calls };
     }
     default: return bad;
   }
 }
-function matchRecord(fieldNames, recCtx) {
-  const set = [...fieldNames].sort().join(",");
-  for (const [n, rec] of recCtx.records) if (rec.fields.map((f) => f.name).sort().join(",") === set) return n;
-  return null;
-}
+function matchRecord(fieldNames, recCtx) { const set = [...fieldNames].sort().join(","); for (const [n, rec] of recCtx.records) if (rec.fields.map((f) => f.name).sort().join(",") === set) return n; return null; }
 function union(...sets) { const out = new Set(); for (const s of sets) for (const x of s) out.add(x); return out; }
 
 // ---- encoding ---------------------------------------------------------------
 function codeEntry(fn, ctx) {
   const sig = ctx.fnSig.get(fn.name);
-  const locals = new Map();
-  let idx = 0;
+  const locals = new Map(); let idx = 0;
   fn.params.forEach((p, i) => locals.set(p, { index: idx++, wt: sig.paramWts[i] }));
-  const localDecls = [];
-  assignLocals(fn.body, locals, () => idx++, localDecls, ctx);
-
+  const decls = [];
+  const next = () => idx++;
+  assignLocals(fn.body, locals, next, decls, ctx);
   const body = [];
   enc(fn.body, { ...ctx, locals }, body);
-  const localsVec = vec(localDecls.map((wt) => [...uleb(1), ...wtBytes(wt, ctx.recordIndex)]));
+  const localsVec = vec(decls.map((wt) => [...uleb(1), ...wtBytes(wt, ctx.structIndex, ctx.strIndex)]));
   const full = [...localsVec, ...body, 0x0b];
   return [...uleb(full.length), ...full];
 }
@@ -171,66 +234,91 @@ function codeEntry(fn, ctx) {
 function assignLocals(e, locals, next, decls, ctx) {
   if (!e || typeof e !== "object") return;
   if (e.kind === "Block") {
-    for (const b of e.bindings) {
-      const wt = analyze(b.expr, locals, ctx.fnSig, ctx.recCtx).wt;
-      assignLocals(b.expr, locals, next, decls, ctx);
-      locals.set(b.name, { index: next(), wt });
-      decls.push(wt);
+    for (const b of e.bindings) { const wt = analyze(b.expr, locals, ctx.fnSig, ctx.recCtx).wt; assignLocals(b.expr, locals, next, decls, ctx); locals.set(b.name, { index: next(), wt }); decls.push(wt); }
+    assignLocals(e.result, locals, next, decls, ctx); return;
+  }
+  if (e.kind === "Match") {
+    const sw = analyze(e.scrutinee, locals, ctx.fnSig, ctx.recCtx).wt;
+    assignLocals(e.scrutinee, locals, next, decls, ctx);
+    e.__temp = next(); decls.push(sw);
+    for (const arm of e.arms) {
+      if (arm.pattern.kind === "PCtor") for (const a of arm.pattern.args) if (a.kind === "PVar") { locals.set(a.name, { index: next(), wt: "i32" }); decls.push("i32"); }
+      assignLocals(arm.body, locals, next, decls, ctx);
     }
-    assignLocals(e.result, locals, next, decls, ctx);
     return;
   }
-  for (const k of ["left", "right", "operand", "cond", "then", "else", "callee", "obj", "base", "result", "scrutinee"]) if (e[k]) assignLocals(e[k], locals, next, decls, ctx);
+  for (const k of ["left", "right", "operand", "cond", "then", "else", "obj", "base", "result"]) if (e[k]) assignLocals(e[k], locals, next, decls, ctx);
+  if (e.callee) assignLocals(e.callee, locals, next, decls, ctx);
   if (e.args) for (const a of e.args) assignLocals(a.expr || a, locals, next, decls, ctx);
   if (e.fields) for (const f of e.fields) assignLocals(f.expr, locals, next, decls, ctx);
 }
 
 function enc(e, ctx, out) {
   switch (e.kind) {
-    case "Lit": {
+    case "Lit":
       if (typeof e.value === "boolean") { out.push(0x41, ...sleb(e.value ? 1 : 0)); return "i32"; }
       if (e.float) { out.push(0x44, ...f64bytes(e.value)); return "f64"; }
       out.push(0x41, ...sleb(e.value)); return "i32";
+    case "StrInterp": {
+      const text = e.parts.map((p) => (p.kind === "str" ? p.value : "")).join("");
+      const offset = ctx.recCtx.strings.length;
+      for (const b of Buffer.from(text, "utf8")) ctx.recCtx.strings.push(b);
+      out.push(0x41, ...sleb(offset), 0x41, ...sleb(text.length), 0xfb, 0x09, ...uleb(ctx.strIndex), ...uleb(0)); // array.new_data $str 0
+      return { str: true };
     }
-    case "Var": { const l = ctx.locals.get(e.name); out.push(0x20, ...uleb(l.index)); return l.wt; }
-    case "UnOp": {
+    case "Var": {
+      const l = ctx.locals.get(e.name);
+      if (l) { out.push(0x20, ...uleb(l.index)); return l.wt; }
+      const c = ctx.recCtx.ctors.get(e.name);
+      if (c && c.arity === 0) { out.push(0x41, ...sleb(c.tag)); for (let i = 0; i < c.maxArity; i++) out.push(0x41, 0x00); out.push(0xfb, 0x00, ...uleb(ctx.structIndex.get(c.sum))); return { ref: c.sum }; }
+      throw new Error("wasm: cannot reference " + e.name + " as a value");
+    }
+    case "UnOp":
       if (e.op === "neg") { const w = analyze(e.operand, ctx.locals, ctx.fnSig, ctx.recCtx).wt; if (w === "f64") { enc(e.operand, ctx, out); out.push(0x9a); return "f64"; } out.push(0x41, 0x00); enc(e.operand, ctx, out); out.push(0x6b); return "i32"; }
-      enc(e.operand, ctx, out); out.push(0x45); return "i32"; // not -> i32.eqz
+      enc(e.operand, ctx, out); out.push(0x45); return "i32";
+    case "BinOp": { const lw = enc(e.left, ctx, out); enc(e.right, ctx, out); out.push(...binOp(e.op, lw)); return ["and", "or", "==", "/=", "<", "<=", ">", ">="].includes(e.op) ? "i32" : lw; }
+    case "If": { const tw = analyze(e.then, ctx.locals, ctx.fnSig, ctx.recCtx).wt; enc(e.cond, ctx, out); out.push(0x04, ...wtBytes(tw, ctx.structIndex, ctx.strIndex)); enc(e.then, ctx, out); out.push(0x05); enc(e.else, ctx, out); out.push(0x0b); return tw; }
+    case "Block": { for (const b of e.bindings) { enc(b.expr, ctx, out); out.push(0x21, ...uleb(ctx.locals.get(b.name).index)); } return enc(e.result, ctx, out); }
+    case "Call": {
+      if (e.callee.kind === "Field" && e.callee.obj.kind === "Var" && e.callee.obj.name === "String" && e.callee.name === "length") { enc(e.args[0], ctx, out); out.push(0xfb, 0x0f); return "i32"; } // array.len
+      if (e.callee.kind === "Var" && ctx.recCtx.ctors.has(e.callee.name)) {
+        const c = ctx.recCtx.ctors.get(e.callee.name);
+        out.push(0x41, ...sleb(c.tag)); for (const a of e.args) enc(a, ctx, out); for (let i = e.args.length; i < c.maxArity; i++) out.push(0x41, 0x00);
+        out.push(0xfb, 0x00, ...uleb(ctx.structIndex.get(c.sum))); return { ref: c.sum };
+      }
+      if (e.callee.kind === "Var" && ctx.fnSig.has(e.callee.name)) { for (const a of e.args) enc(a, ctx, out); out.push(0x10, ...uleb(ctx.fidx.get(e.callee.name))); return ctx.fnSig.get(e.callee.name).retWt; }
+      throw new Error("wasm: unsupported call form");
     }
-    case "BinOp": {
-      const lw = enc(e.left, ctx, out); enc(e.right, ctx, out);
-      out.push(...binOp(e.op, lw));
-      return ["and", "or", "==", "/=", "<", "<=", ">", ">="].includes(e.op) ? "i32" : lw;
-    }
-    case "If": {
-      const tw = analyze(e.then, ctx.locals, ctx.fnSig, ctx.recCtx).wt;
-      enc(e.cond, ctx, out);
-      out.push(0x04, ...wtBytes(tw, ctx.recordIndex));
-      enc(e.then, ctx, out); out.push(0x05); enc(e.else, ctx, out); out.push(0x0b);
-      return tw;
-    }
-    case "Block": {
-      for (const b of e.bindings) { enc(b.expr, ctx, out); out.push(0x21, ...uleb(ctx.locals.get(b.name).index)); }
-      return enc(e.result, ctx, out);
-    }
-    case "Call": { for (const a of e.args) enc(a, ctx, out); out.push(0x10, ...uleb(ctx.fidx.get(e.callee.name))); return ctx.fnSig.get(e.callee.name).retWt; }
     case "Record": {
-      const rec = matchRecord(e.fields.map((f) => f.name), ctx.recCtx);
-      const order = ctx.recCtx.records.get(rec).fields;
-      for (const fld of order) { const lit = e.fields.find((f) => f.name === fld.name); enc(lit.expr, ctx, out); }
-      out.push(0xfb, 0x00, ...uleb(ctx.recordIndex.get(rec))); // struct.new
-      return { ref: rec };
+      const rec = matchRecord(e.fields.map((f) => f.name), ctx.recCtx); const order = ctx.recCtx.records.get(rec).fields;
+      for (const fld of order) enc(e.fields.find((f) => f.name === fld.name).expr, ctx, out);
+      out.push(0xfb, 0x00, ...uleb(ctx.structIndex.get(rec))); return { ref: rec };
     }
-    case "Field": {
-      const ow = enc(e.obj, ctx, out);
-      const rec = ctx.recCtx.records.get(ow.ref);
-      const fi = rec.fields.findIndex((f) => f.name === e.name);
-      out.push(0xfb, 0x02, ...uleb(ctx.recordIndex.get(ow.ref)), ...uleb(fi)); // struct.get
-      return rec.fields[fi].wt;
+    case "Field": { const ow = enc(e.obj, ctx, out); const rec = ctx.recCtx.records.get(ow.ref); const fi = rec.fields.findIndex((f) => f.name === e.name); out.push(0xfb, 0x02, ...uleb(ctx.structIndex.get(ow.ref)), ...uleb(fi)); return rec.fields[fi].wt; }
+    case "Match": {
+      const sumName = e.__sumWt.ref; const si = ctx.structIndex.get(sumName);
+      const rwt = analyze(e.arms[0].body, withPatLocals(e.arms[0], ctx), ctx.fnSig, ctx.recCtx).wt;
+      enc(e.scrutinee, ctx, out); out.push(0x21, ...uleb(e.__temp));
+      const emitArm = (k) => {
+        if (k >= e.arms.length) { out.push(0x00); return; } // unreachable
+        const arm = e.arms[k];
+        if (arm.pattern.kind === "PWild") { enc(arm.body, ctx, out); return; }
+        const c = ctx.recCtx.ctors.get(arm.pattern.name);
+        out.push(0x20, ...uleb(e.__temp), 0xfb, 0x02, ...uleb(si), ...uleb(0)); // tag
+        out.push(0x41, ...sleb(c.tag), 0x46);                                    // == tag
+        out.push(0x04, ...wtBytes(rwt, ctx.structIndex, ctx.strIndex));          // if
+        arm.pattern.args.forEach((a, i) => { if (a.kind === "PVar") { out.push(0x20, ...uleb(e.__temp), 0xfb, 0x02, ...uleb(si), ...uleb(1 + i), 0x21, ...uleb(ctx.locals.get(a.name).index)); } });
+        enc(arm.body, ctx, out);
+        out.push(0x05); emitArm(k + 1); out.push(0x0b);
+      };
+      emitArm(0);
+      return rwt;
     }
     default: throw new Error(`wasm: cannot encode ${e.kind}`);
   }
 }
+
+function withPatLocals(arm, ctx) { const m = new Map(ctx.locals); if (arm.pattern.kind === "PCtor") for (const a of arm.pattern.args) if (a.kind === "PVar") m.set(a.name, { wt: "i32" }); return m; }
 
 function binOp(op, wt) {
   const I = { "+": 0x6a, "-": 0x6b, "*": 0x6c, "/": 0x6d, "%": 0x6f, "==": 0x46, "/=": 0x47, "<": 0x48, "<=": 0x4c, ">": 0x4a, ">=": 0x4e, "and": 0x71, "or": 0x72 };

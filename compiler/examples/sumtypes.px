@@ -1,0 +1,31 @@
+module Sum
+
+-- Sum types with integer payloads compile to tagged WasmGC structs
+-- { tag:i32, p0:i32, ... }; `match` dispatches on the tag. test()/demo() build
+-- variants and match on them entirely inside Wasm, returning Int — callable from JS.
+
+type Shape =
+  | Circle(r: Int)
+  | Square(w: Int)
+
+fn area(s: Shape): Int =
+  match s {
+    Circle(r) -> 3 * r * r
+    Square(w) -> w * w
+  }
+
+fn test(): Int = area(Circle(10)) + area(Square(5))
+
+type Expr =
+  | Lit(n: Int)
+  | Add(a: Int, b: Int)
+  | Neg(n: Int)
+
+fn eval(e: Expr): Int =
+  match e {
+    Lit(n)    -> n
+    Add(a, b) -> a + b
+    Neg(n)    -> 0 - n
+  }
+
+fn demo(): Int = eval(Lit(7)) + eval(Add(3, 4)) + eval(Neg(2))

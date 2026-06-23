@@ -1,10 +1,10 @@
 {
   "name": "pcx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "bin": { "pcx": "./pcx.js" },
-  "description": "The PecanX compiler (pcx) — v0.2: lexer, parser, exhaustiveness + whole-program Hindley-Milner type inference, multi-module linker, and JavaScript / WebAssembly (WasmGC) / real-DOM backends.",
+  "bin": { "pcx": "./pcx.js", "orchard": "./orchard.js" },
+  "description": "The PecanX compiler (pcx) — v0.3: lexer, parser, exhaustiveness + whole-program Hindley-Milner type inference, multi-module linker, JavaScript / WebAssembly (WasmGC: records, sum types, strings) / virtual-DOM real-DOM backends, plus fmt, lsp, dev, and the Orchard package manager.",
   "scripts": {
     "test": "node tests/run.js"
   }

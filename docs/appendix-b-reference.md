@@ -8,18 +8,18 @@ the drawing board.
 A note on status before we begin. PecanX is a *designed* language. The grammar,
 the type system, and the standard library described throughout this manual are
 fixed and authoritative — they are the contract. The **toolchain** is now largely
-built: a working compiler, **`pcx` v0.2**, lives in [`../compiler`](../compiler).
+built: a working compiler, **`pcx` v0.3**, lives in [`../compiler`](../compiler).
 It lexes, parses, checks `match` exhaustiveness, **infers and checks types
 whole-program (Hindley-Milner, `--types`, incl. cross-module errors)**, **links
 multiple modules**, and compiles to **JavaScript, WebAssembly** (`Int`/`Float`/
-records via WasmGC), **or a real-DOM browser app** with virtual-DOM diffing, then
-runs it — including whole Model/Msg/update/view apps (headlessly via `Program.run`,
-or in a browser via `Program.mount` with wired events and async effects). Try
-`node pcx.js run examples/signup_demo.px`, the `Demo.px` drivers under
-[`../examples`](../examples), `--target wasm` on `examples/geo.px`, or `--types`.
-What's *still* pending — Wasm sum types/strings/closures, keyed VDOM
-reconciliation, the dev server, and the Orchard registry — is marked
-**(forward-looking)** where it appears. A second
+records/sum-types/strings via WasmGC), **or a real-DOM browser app** with
+virtual-DOM diffing and keyed reconciliation — plus a formatter (`pcx fmt`), a
+language server (`pcx lsp`), a dev server (`pcx dev`), and the **Orchard** package
+manager (`orchard`, local registry). Try `node pcx.js run examples/signup_demo.px`,
+the `Demo.px` drivers under [`../examples`](../examples), `--target wasm` on
+`examples/sumtypes.px`, or `--types`. What's *still* pending — Wasm closures /
+first-class functions, the `?` operator, a networked Orchard registry, and richer
+LSP features — is marked **(forward-looking)** where it appears. A second
 runnable artifact is the TypeScript + Zod reference app at
 [`../examples/pecanx-signup`](../examples/pecanx-signup), which demonstrates the
 isomorphic-validation idea on a production stack today.
@@ -124,9 +124,9 @@ local-lib = { path = "../local-lib" }      # path dependency, no registry fetch
 
 ---
 
-## B.2 The `pcx` CLI **(implemented in v0.2 — `check [--types]` / `build [--target js|wasm|dom]` / `run`)**
+## B.2 The `pcx` CLI **(implemented in v0.3 — `check [--types]` / `build [--target js|wasm|dom]` / `run` / `fmt` / `lsp` / `dev`)**
 
-`pcx` is the PecanX compiler and project driver. In v0.2, `check` (with optional
+`pcx` is the PecanX compiler and project driver. In v0.3, `check` (with optional
 `--types`), `build` (targets `js` / `wasm` / `dom`), and `run` are implemented;
 `dev`, `fmt`, and `lsp` below are forward-looking.
 
@@ -150,7 +150,7 @@ non-default `pecanx.toml`), `--quiet`, `--verbose`, `--version`, `--help`.
 
 ---
 
-## B.3 The `orchard` CLI **(forward-looking)**
+## B.3 The `orchard` CLI **(implemented in v0.3 — local file registry)**
 
 Orchard is the PecanX package registry; `orchard` is its client. It manages the
 `[dependencies]` table and the lockfile. Not yet implemented.
@@ -177,7 +177,7 @@ orchard <command> [options]
 PecanX leans hard on the compiler: the language deliberately removes whole
 classes of failure (no `null`, no exceptions, mandatory exhaustiveness) so that
 mistakes surface as diagnostics rather than runtime surprises. The table below
-lists representative codes and the typical fix. **(`pcx` v0.2 already emits
+lists representative codes and the typical fix. **(`pcx` v0.3 already emits
 `PX0001` — non-exhaustive match — `PX0200` for type errors (`--types`), and
 `PX0100` for the unsupported `?`; the
 remaining codes are forward-looking, but each maps directly to a rule stated
@@ -221,20 +221,21 @@ This section tracks the gap between the *language contract* (fixed) and the
 *running tooling*. Much of the toolchain now exists (first item); the rest is
 forward-looking.
 
-- **The `pcx` toolchain — shipped (v0.2).** [`../compiler`](../compiler) lexes,
+- **The `pcx` toolchain — shipped (v0.3).** [`../compiler`](../compiler) lexes,
   parses, checks `match` exhaustiveness, **infers and checks types whole-program**
   (Hindley-Milner, `--types`: unbound vars, mismatches, arity, occurs check, **and
-  cross-module errors**), **links multiple modules** (`import` resolved by `module`
-  header), and compiles to **JavaScript**, **WebAssembly** (real `.wasm` for the
-  pure core over `Int`, `Float`, and **records as WasmGC structs**), or a
-  **real-DOM browser app** (`--target dom`) whose runtime **diffs the virtual tree
-  and patches in place** (node identity preserved), wiring events and asynchronous
-  `fetch`/`setTimeout` effects via `Program.mount`. Headless apps run via
-  `Program.run` (the `counter` / `todo` / `remote-users` `Demo.px` drivers).
-  *Still pending:* Wasm sum types (tagged-struct subtyping), strings (`array<i8>` +
-  a string lib), and closures (closure-conversion + `call_ref`); keyed VDOM
-  reconciliation for reordered lists; the formatter (`pcx fmt`), language server
-  (`pcx lsp`), and dev server (`pcx dev`).
+  cross-module errors**), **links multiple modules**, and compiles to **JavaScript**,
+  **WebAssembly** (real `.wasm` over `Int`, `Float`, **records, sum types, and
+  strings** via WasmGC structs / tagged structs / `array<i8>`), or a **real-DOM
+  browser app** (`--target dom`) whose runtime **diffs the virtual tree and patches
+  in place** with **keyed reconciliation** for reordered lists, wiring events and
+  asynchronous `fetch`/`setTimeout` effects via `Program.mount`. It also ships a
+  **formatter** (`pcx fmt`), a **language server** (`pcx lsp`, diagnostics over
+  stdio), a **dev server** (`pcx dev`), and **Orchard** (`orchard`), a local
+  file-based package manager that installs into `orchard_modules/` (auto-linked).
+  *Still pending:* Wasm closures / first-class functions (closure-conversion +
+  `call_ref`); the `?` operator's lowering; a networked Orchard registry (version
+  solving, lockfiles); and richer LSP features (hover, completion, semantic ranges).
 - **Algebraic effects.** The current effect model is the Elm-style
   `Cmd<Msg>` / `update` loop (see
   [Effects & Architecture](06-effects-and-architecture.md)). A more general
@@ -244,10 +245,11 @@ forward-looking.
   inferred onto the JS target; the Wasm module never touches the DOM directly.
   Letting the Kernel drive the DOM without the JS hop is a future possibility,
   pending browser-side ergonomics.
-- **The Orchard registry.** The registry service and the `orchard` client in
-  [B.3](#b3-the-orchard-cli-forward-looking) are not live. Dependency
-  resolution, publishing, and search are all specified but unimplemented; use
-  `path` dependencies for local development in the meantime.
+- **The Orchard registry.** The `orchard` client in
+  [B.3](#b3-the-orchard-cli-implemented-in-v03--local-file-registry) is implemented
+  against a **local file registry** (`orchard add` / `install` / `list` →
+  `orchard_modules/`, auto-linked by `pcx`). A *networked* registry with version
+  solving, lockfiles, publishing, and search remains future work.
 
 ---
 

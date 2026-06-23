@@ -120,20 +120,21 @@ Complete example apps for dissemination live in [`examples/`](examples/README.md
 
 PecanX is a **language design with a working compiler and a runnable reference app.**
 
-- **`pcx` v0.2** — a real, zero-dependency compiler in [`compiler/`](compiler): it
+- **`pcx` v0.3** — a real, zero-dependency compiler in [`compiler/`](compiler): it
   lexes, parses, checks `match` exhaustiveness, **infers and checks types
   whole-program** (Hindley-Milner, `--types`, including cross-module errors),
   **links multiple modules**, and compiles to **JavaScript**, **WebAssembly**
-  (`Int`/`Float`/records via WasmGC structs — real `.wasm`), or a **real-DOM
-  browser app** (`--target dom`) with **virtual-DOM diffing** (patches in place,
-  preserving node identity), wired events, and async effects. It runs whole
-  Model/Msg/update/view apps — the [counter](examples/counter),
-  [todo](examples/todo), and [remote-users](examples/remote-users) examples each
-  run via a `Demo.px` driver. Its test suite is 27 end-to-end cases.
+  (`Int`/`Float`/**records**/**sum types**/**strings** via WasmGC — real `.wasm`),
+  or a **real-DOM browser app** (`--target dom`) with **virtual-DOM diffing** and
+  **keyed reconciliation**. It also ships a formatter (`fmt`), a language server
+  (`lsp`), a dev server (`dev`), and **Orchard** (`orchard`) — a local package
+  manager. The [counter](examples/counter), [todo](examples/todo), and
+  [remote-users](examples/remote-users) apps each run via a `Demo.px` driver. Its
+  test suite is 36 end-to-end cases.
 - **`pecanx-signup`** — the TypeScript + Zod reference app demonstrating isomorphic
   validation on a production stack ([examples/pecanx-signup](examples/pecanx-signup)).
 
-Still ahead: Wasm sum types / strings / closures, keyed VDOM reconciliation, and
-the `pcx fmt`/`lsp`/`dev` tooling — see
+Still ahead: Wasm closures / first-class functions, the `?` operator, a networked
+Orchard registry, and richer LSP features — see
 [Appendix B · Roadmap](docs/appendix-b-reference.md). These docs describe the
 language as designed; forward-looking parts are marked.

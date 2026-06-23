@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// pcx — the PecanX compiler (v0.2).
+// pcx — the PecanX compiler (v0.3).
 //
 //   pcx check [--types] <file.px>        exhaustiveness + whole-program HM inference
 //   pcx build <file.px> [--target js|wasm|dom] [-o out]
 //   pcx run   <file.px>                  compile, link, and execute (calls main())
 //
-// v0.2 links multiple .px modules (resolving `import` by each file's `module`
+// v0.3 links multiple .px modules (resolving `import` by each file's `module`
 // header) and targets JavaScript, WebAssembly (Int/Float/records via WasmGC), or a
 // virtual-DOM-diffing real-DOM app. See ../docs/appendix-b-reference.md for the
 // remaining roadmap (Wasm sum-types/strings/closures, keyed VDOM, fmt/lsp/dev).
@@ -16,13 +16,16 @@ import { dirname, resolve, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 
-import { LexError } from "./src/lexer.js";
-import { ParseError } from "./src/parser.js";
+import { lex, LexError } from "./src/lexer.js";
+import { parse, ParseError } from "./src/parser.js";
+import { formatProgram } from "./src/format.js";
 import { check } from "./src/check.js";
 import { inferTypesLinked } from "./src/types.js";
 import { generateLinked, CodegenError } from "./src/codegen.js";
 import { resolveModules } from "./src/link.js";
 import { compileWasm } from "./src/wasm.js";
+import { startLsp } from "./src/lsp.js";
+import { startDev } from "./src/dev.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = readFileSync(resolve(HERE, "src/runtime.js"), "utf8");
@@ -30,10 +33,22 @@ const RUNTIME = readFileSync(resolve(HERE, "src/runtime.js"), "utf8");
 function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   if (!cmd || cmd === "help" || cmd === "--help" || cmd === "-h") return usage(0);
-  if (!["check", "build", "run"].includes(cmd)) { console.error(`pcx: unknown command "${cmd}"`); return usage(1); }
+  if (!["check", "build", "run", "fmt", "lsp", "dev"].includes(cmd)) { console.error(`pcx: unknown command "${cmd}"`); return usage(1); }
+  if (cmd === "lsp") { startLsp(); return; }
 
   const file = rest.find((a) => !a.startsWith("-"));
   if (!file) { console.error("pcx: no input file"); return usage(1); }
+
+  if (cmd === "fmt") {
+    let src; try { src = readFileSync(file, "utf8"); } catch { console.error(`pcx: cannot read ${file}`); process.exit(1); }
+    let program;
+    try { program = parse(lex(src)); }
+    catch (e) { if (e instanceof LexError || e instanceof ParseError) { console.error(`${file}: ${e.message}`); process.exit(1); } throw e; }
+    const out = formatProgram(program);
+    if (rest.includes("-w")) { writeFileSync(file, out); console.log(`✓ formatted ${basename(file)}`); }
+    else process.stdout.write(out);
+    return;
+  }
   let outPath = null;
   const oi = rest.indexOf("-o");
   if (oi !== -1) outPath = rest[oi + 1];
@@ -42,6 +57,13 @@ function main() {
 
   try { readFileSync(file, "utf8"); }
   catch { console.error(`pcx: cannot read ${file}`); process.exit(1); }
+
+  if (cmd === "dev") {
+    const pi = rest.indexOf("-p");
+    const port = pi !== -1 ? Number(rest[pi + 1]) : 8080;
+    startDev(file, port, () => buildDomHtml(file));
+    return;
+  }
 
   let resolved;
   try {
@@ -81,14 +103,8 @@ function main() {
 
   // Real-DOM target: emit a self-contained HTML page that mounts the app.
   if (cmd === "build" && target === "dom") {
-    const entryProgram = ordered.find((m) => m.name === entryName).program;
-    const have = new Set(entryProgram.decls.filter((d) => d.kind === "Fn").map((d) => d.name));
-    const missing = ["init", "update", "view"].filter((n) => !have.has(n));
-    if (missing.length) { console.error(`pcx: --target dom requires ${missing.join(", ")} in the entry module`); process.exit(1); }
-    const linked = generateLinked(ordered, entryName, { domMount: true });
-    const dest = outPath || file.replace(/\.px$/, "") + ".html";
-    writeFileSync(dest, domHtml(basename(file), `${RUNTIME}\n${linked.js}`));
-    console.log(`✓ wrote ${dest}`);
+    try { const dest = outPath || file.replace(/\.px$/, "") + ".html"; writeFileSync(dest, buildDomHtml(file)); console.log(`✓ wrote ${dest}`); }
+    catch (e) { console.error(`pcx: ${e.message}`); process.exit(1); }
     return;
   }
 
@@ -120,6 +136,17 @@ function main() {
   }
 }
 
+// Build the entry app's real-DOM HTML (used by `build --target dom` and `dev`).
+function buildDomHtml(file) {
+  const { ordered, entryName } = resolveModules(file);
+  const entryProgram = ordered.find((m) => m.name === entryName).program;
+  const have = new Set(entryProgram.decls.filter((d) => d.kind === "Fn").map((d) => d.name));
+  const missing = ["init", "update", "view"].filter((n) => !have.has(n));
+  if (missing.length) throw new Error(`--target dom requires ${missing.join(", ")} in the entry module`);
+  const linked = generateLinked(ordered, entryName, { domMount: true });
+  return domHtml(basename(file), `${RUNTIME}\n${linked.js}`);
+}
+
 function domHtml(title, script) {
   return `<!doctype html>
 <html lang="en">
@@ -139,13 +166,16 @@ ${script}
 }
 
 function usage(code) {
-  console.log(`pcx — the PecanX compiler (v0.2)
+  console.log(`pcx — the PecanX compiler (v0.3)
 
 usage:
   pcx check [--types] <file.px>   exhaustiveness checks; --types adds Hindley-Milner inference
   pcx build <file.px> [--target js|wasm|dom] [-o out]
                                   compile + link (js → .mjs, wasm → .wasm, dom → .html)
   pcx run   <file.px>             compile, link, and execute (runs main() if present)
+  pcx fmt   <file.px> [-w]        format source (print, or -w to write in place)
+  pcx lsp                         run the language server (LSP over stdio)
+  pcx dev   <file.px> [-p port]   serve the real-DOM app (default port 8080)
 `);
   process.exit(code);
 }

@@ -1,4 +1,4 @@
-// PecanX lexer (pcx v0.2).
+// PecanX lexer (pcx v0.3).
 //
 // Produces a flat token stream. Newlines are treated as ordinary whitespace:
 // the grammar is offside-free because keywords (`let`, `fn`, ...) and structural

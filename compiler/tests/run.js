@@ -1,16 +1,18 @@
 // pcx test runner. Spawns the CLI end-to-end and asserts behavior.
 //   node tests/run.js
 
-import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { spawnSync, spawn } from "node:child_process";
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
 import { lex } from "../src/lexer.js";
 import { parse } from "../src/parser.js";
 import { compileWasm } from "../src/wasm.js";
 import { resolveModules } from "../src/link.js";
 import { generateLinked } from "../src/codegen.js";
+import { formatProgram } from "../src/format.js";
+import { startDev } from "../src/dev.js";
 import { makeDocument } from "./domshim.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -149,6 +151,19 @@ for (const [n, frag] of TYPES_BAD) {
   else bad("types cross-module", `status=${r.status}\n${r.err}`);
 }
 
+// --- pcx fmt (idempotent + structure-preserving) ----------------------------
+for (const f of ["examples/signup_demo.px", "examples/sumtypes.px", "../examples/todo/Main.px"]) {
+  try {
+    const src = readFileSync(resolve(ROOT, f), "utf8");
+    const a1 = parse(lex(src));
+    const f1 = formatProgram(a1);
+    const a2 = parse(lex(f1));
+    const f2 = formatProgram(a2);
+    if (f1 === f2 && JSON.stringify(a1) === JSON.stringify(a2)) ok(`fmt: idempotent + structure-preserving (${f.split(/[\\/]/).pop()})`);
+    else bad(`fmt: ${f}`, `idempotent=${f1 === f2} equivalent=${JSON.stringify(a1) === JSON.stringify(a2)}`);
+  } catch (e) { bad(`fmt: ${f}`, String((e && e.stack) || e)); }
+}
+
 // --- WebAssembly backend (emit a real .wasm, run it in Node) ----------------
 try {
   const program = parse(lex(readFileSync(resolve(ROOT, "examples/math.px"), "utf8")));
@@ -176,6 +191,22 @@ try {
 } catch (e) {
   bad("wasm records", String((e && e.stack) || e));
 }
+
+try {
+  const program = parse(lex(readFileSync(resolve(ROOT, "examples/sumtypes.px"), "utf8")));
+  const { instance } = await WebAssembly.instantiate(compileWasm(program).bytes);
+  const x = instance.exports;
+  if (x.test() === 325 && x.demo() === 12) ok("wasm backend: sum types (tagged WasmGC structs + match)");
+  else bad("wasm sums", `test=${x.test()} demo=${x.demo()}`);
+} catch (e) { bad("wasm sums", String((e && e.stack) || e)); }
+
+try {
+  const program = parse(lex(readFileSync(resolve(ROOT, "examples/strings.px"), "utf8")));
+  const { instance } = await WebAssembly.instantiate(compileWasm(program).bytes);
+  const x = instance.exports;
+  if (x.hello() === 5 && x.empty() === 0 && x.long() === 10) ok("wasm backend: strings (array<i8> + array.len)");
+  else bad("wasm strings", `hello=${x.hello()} empty=${x.empty()} long=${x.long()}`);
+} catch (e) { bad("wasm strings", String((e && e.stack) || e)); }
 
 // --- real-DOM runtime (verified in Node under a minimal DOM shim) -----------
 function buildDom(entryFile) {
@@ -214,6 +245,81 @@ try {
   if (loading && ready) ok("dom runtime: async effect resolves and re-renders");
   else bad("dom async", `loading=${loading} ready=${ready} :: ${root.textContent}`);
 } catch (e) { bad("dom async", String((e && e.stack) || e)); }
+
+try {
+  const root = await loadDom(resolve(ROOT, "../examples/keyed/Main.px"));
+  const ul = root.find((n) => n.tag === "ul");
+  const li2 = ul.childNodes[1]; // the "2" item before rotation
+  const before = ul.childNodes.map((c) => c.textContent).join(",");
+  root.find((n) => n.tag === "button" && n.textContent === "rotate").fire("click");
+  const after = ul.childNodes.map((c) => c.textContent).join(",");
+  // [1,2,3] -> [2,3,1]; keyed reconciliation reuses the same node for "2"
+  const movedSame = ul.childNodes[0] === li2 && li2.textContent === "2";
+  if (before === "1,2,3" && after === "2,3,1" && movedSame) ok("dom runtime: keyed reconciliation reuses nodes across reorder");
+  else bad("dom keyed", `before=${before} after=${after} movedSame=${movedSame}`);
+} catch (e) { bad("dom keyed", String((e && e.stack) || e)); }
+
+// --- pcx lsp (diagnostics over stdio) ---------------------------------------
+{
+  const out = await new Promise((res) => {
+    const p = spawn(process.execPath, [PCX, "lsp"]);
+    let acc = "";
+    p.stdout.on("data", (d) => (acc += d.toString()));
+    const send = (m) => { const s = JSON.stringify(m); p.stdin.write(`Content-Length: ${Buffer.byteLength(s)}\r\n\r\n${s}`); };
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const text = "module Bad\ntype Color =\n  | Red\n  | Green\n  | Blue\nfn name(c: Color): String =\n  match c {\n    Red -> \"r\"\n    Green -> \"g\"\n  }\n";
+    send({ jsonrpc: "2.0", method: "textDocument/didOpen", params: { textDocument: { uri: "file:///bad.px", text } } });
+    setTimeout(() => { try { p.kill(); } catch {} res(acc); }, 1200);
+  });
+  if (out.includes("capabilities") && out.includes("publishDiagnostics") && out.includes("PX0001")) ok("lsp: initialize + publishDiagnostics (PX0001)");
+  else bad("lsp", out.slice(0, 300));
+}
+
+// --- pcx dev (serves the real-DOM build) ------------------------------------
+{
+  const runtimeSrc = readFileSync(resolve(ROOT, "src/runtime.js"), "utf8");
+  const buildCounter = () => {
+    const { ordered, entryName } = resolveModules(resolve(ROOT, "../examples/counter/Main.px"));
+    const { js } = generateLinked(ordered, entryName, { domMount: true });
+    return `<!doctype html><html><body><div id="app"></div><script type="module">${runtimeSrc}\n${js}</script></body></html>`;
+  };
+  const okDev = await new Promise((res) => {
+    const server = startDev("counter", 0, buildCounter);
+    server.on("listening", async () => {
+      const port = server.address().port;
+      try {
+        const t1 = await (await fetch(`http://localhost:${port}/`)).text();
+        const t2 = await (await fetch(`http://localhost:${port}/healthz`)).text();
+        server.close();
+        res(t1.includes('id="app"') && t1.includes("Program.mount") && t2 === "ok");
+      } catch { server.close(); res(false); }
+    });
+    server.on("error", () => res(false));
+  });
+  if (okDev) ok("dev: serves the real-DOM build + /healthz");
+  else bad("dev", "server/build/fetch failed");
+}
+
+// --- orchard (local package manager) + pcx integration ----------------------
+{
+  const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const proj = resolve(tmpdir(), `pcx-orch-${stamp}`);
+  const reg = resolve(tmpdir(), `pcx-reg-${stamp}`);
+  mkdirSync(join(reg, "greet"), { recursive: true });
+  writeFileSync(join(reg, "greet", "Greet.px"), 'module Greet\nfn greeting(): String = "hi from orchard"\n');
+  writeFileSync(join(reg, "greet", "pecanx.toml"), '[package]\nname = "greet"\nversion = "1.2.0"\n');
+  mkdirSync(proj, { recursive: true });
+  writeFileSync(join(proj, "pecanx.toml"), '[package]\nname = "app"\nversion = "0.1.0"\n');
+  writeFileSync(join(proj, "Main.px"), 'module Main\nimport Greet exposing (greeting)\nfn main(): Unit = Console.log(greeting())\n');
+  const ORCHARD = resolve(ROOT, "orchard.js");
+  const addR = spawnSync(process.execPath, [ORCHARD, "add", "greet", "--registry", reg], { cwd: proj, encoding: "utf8" });
+  const copied = existsSync(join(proj, "orchard_modules", "greet", "Greet.px"));
+  const recorded = /greet\s*=\s*"1\.2\.0"/.test(readFileSync(join(proj, "pecanx.toml"), "utf8"));
+  const runR = spawnSync(process.execPath, [PCX, "run", join(proj, "Main.px")], { encoding: "utf8" });
+  const linked = (runR.stdout || "").includes("hi from orchard");
+  if (addR.status === 0 && copied && recorded && linked) ok("orchard: add installs a package; pcx links it");
+  else bad("orchard", `status=${addR.status} copied=${copied} recorded=${recorded} linked=${linked}\n${addR.stderr}\n${runR.stderr}`);
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

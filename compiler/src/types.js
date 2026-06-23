@@ -1,4 +1,4 @@
-// PecanX type inference (pcx v0.2) — Hindley-Milner with unification,
+// PecanX type inference (pcx v0.3) — Hindley-Milner with unification,
 // let-generalization, and an occurs check.
 //
 // Opt-in (`pcx check --types`). It infers and checks the functional core —

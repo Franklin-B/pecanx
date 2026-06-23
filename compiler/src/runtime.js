@@ -1,4 +1,4 @@
-// PecanX runtime prelude (pcx v0.2).
+// PecanX runtime prelude (pcx v0.3).
 //
 // This file is NOT imported — `pcx` reads it as text and prepends it to every
 // compiled program, producing a single self-contained JS module. It therefore
@@ -44,7 +44,7 @@ function $stub(name) {
   return new Proxy({}, {
     get: (_t, prop) => (...args) => {
       throw new Error(
-        "pcx v0.2: " + name + "." + String(prop) +
+        "pcx v0.3: " + name + "." + String(prop) +
         " is not executable yet (UI/effect/FFI backends are pending — see docs/appendix-b-reference.md)"
       );
     },
@@ -129,8 +129,8 @@ function $ensureListener(el, type, dispatch) {
 
 function $applyAttrs(el, oldAttrs, newAttrs, dispatch) {
   const oldM = {}, newM = {}, seenEv = {};
-  for (const a of oldAttrs) if (a && !a.event) oldM[a.k] = a.v;
-  for (const a of newAttrs) if (a && !a.event) newM[a.k] = a.v;
+  for (const a of oldAttrs) if (a && !a.event && a.k !== "key") oldM[a.k] = a.v;
+  for (const a of newAttrs) if (a && !a.event && a.k !== "key") newM[a.k] = a.v;
   for (const k in newM) {
     if (oldM[k] === newM[k]) continue;
     if (k === "disabled") { if (newM[k]) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
@@ -156,12 +156,36 @@ function $patch(parent, dom, oldV, newV, dispatch) {
   }
   if (newText) { if (oldV.text !== newV.text) { try { dom.textContent = newV.text; } catch { dom.data = newV.text; } } return dom; }
   $applyAttrs(dom, oldV.attrs, newV.attrs, dispatch);
-  const kids = dom.childNodes;
-  const common = Math.min(oldV.kids.length, newV.kids.length);
-  for (let i = 0; i < common; i++) $patch(dom, kids[i], oldV.kids[i], newV.kids[i], dispatch);
-  for (let i = oldV.kids.length; i < newV.kids.length; i++) dom.appendChild($createDom(newV.kids[i], dispatch));
-  for (let i = oldV.kids.length - 1; i >= newV.kids.length; i--) dom.removeChild(dom.childNodes[i]);
+  $patchKids(dom, oldV.kids, newV.kids, dispatch);
   return dom;
+}
+
+function $vkey(v) { if (!v || v.$html === "#text") return null; for (const a of v.attrs) if (a && a.k === "key") return a.v; return null; }
+
+// Reconcile children. If the new children are all keyed (Attr.key), match by key
+// so reordered/inserted/removed items reuse their DOM nodes (identity preserved
+// across moves); otherwise diff positionally.
+function $patchKids(parent, oldKids, newKids, dispatch) {
+  const keyed = newKids.length > 0 && newKids.every((k) => $vkey(k) != null) && oldKids.some((k) => $vkey(k) != null);
+  if (keyed) {
+    const oldDoms = [...parent.childNodes];
+    const byKey = new Map();
+    oldKids.forEach((v, i) => { const k = $vkey(v); if (k != null) byKey.set(k, { v, dom: oldDoms[i] }); });
+    const newDoms = newKids.map((nv) => {
+      const k = $vkey(nv);
+      const prev = k != null ? byKey.get(k) : null;
+      if (prev) { $applyAttrs(prev.dom, prev.v.attrs, nv.attrs, dispatch); $patchKids(prev.dom, prev.v.kids, nv.kids, dispatch); byKey.delete(k); return prev.dom; }
+      return $createDom(nv, dispatch);
+    });
+    if (parent.replaceChildren) parent.replaceChildren(...newDoms);
+    else { while (parent.firstChild) parent.removeChild(parent.firstChild); for (const d of newDoms) parent.appendChild(d); }
+    return;
+  }
+  const kids = parent.childNodes;
+  const common = Math.min(oldKids.length, newKids.length);
+  for (let i = 0; i < common; i++) $patch(parent, kids[i], oldKids[i], newKids[i], dispatch);
+  for (let i = oldKids.length; i < newKids.length; i++) parent.appendChild($createDom(newKids[i], dispatch));
+  for (let i = oldKids.length - 1; i >= newKids.length; i--) parent.removeChild(parent.childNodes[i]);
 }
 
 // --- the standard library, namespaced under $P -----------------------------
@@ -253,7 +277,7 @@ const $P = {
     isDigit: (c) => /^[0-9]$/.test(c),
   },
 
-  // --- view layer (renders to a string in the headless v0.2 runtime) --------
+  // --- view layer (renders to a string in the headless v0.3 runtime) --------
   Html: {
     div: (a, k) => $node("div", a, k),
     span: (a, k) => $node("span", a, k),
@@ -273,6 +297,7 @@ const $P = {
     placeholder: (v) => ({ k: "placeholder", v }),
     type_: (v) => ({ k: "type", v }),
     disabled: (v) => ({ k: "disabled", v }),
+    key: (v) => ({ k: "key", v }), // reconciliation key (not rendered)
   },
   Event: {
     onClick: (msg) => ({ event: "click", msg }),

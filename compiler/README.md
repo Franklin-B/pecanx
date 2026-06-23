@@ -1,4 +1,4 @@
-# pcx — the PecanX compiler (v0.2)
+# pcx — the PecanX compiler (v0.3)
 
 A real, working compiler for a useful subset of PecanX. It lexes, parses, checks
 (`match` exhaustiveness + optional Hindley-Milner type inference), links modules,
@@ -9,9 +9,12 @@ it. Written in plain JavaScript with **zero dependencies** — runs on any Node 
 # from this directory:
 node pcx.js run   examples/signup_demo.px                  # compile + execute
 node pcx.js check --types examples/types/ok.px             # exhaustiveness + type inference
-node pcx.js build examples/math.px --target wasm -o m.wasm # → real WebAssembly
-node pcx.js build ../examples/counter/Main.px --target dom # → self-contained HTML app
-node tests/run.js                                          # run the test suite (24 cases)
+node pcx.js build examples/sumtypes.px --target wasm -o s.wasm  # → real WebAssembly (WasmGC)
+node pcx.js build ../examples/counter/Main.px --target dom  # → self-contained HTML app
+node pcx.js fmt   examples/math.px                         # format source
+node pcx.js dev   ../examples/counter/Main.px              # dev server (http://localhost:8080)
+node orchard.js   add http --registry ./reg                # install a package
+node tests/run.js                                          # run the test suite (36 cases)
 ```
 
 ## What it does today
@@ -49,18 +52,19 @@ The `counter`, `todo`, and `remote-users` apps each ship a `Demo.px` driver that
 imports the app's `init`/`update`/`view` and scripts a sequence of messages through
 the runtime — see [../examples](../examples/README.md).
 
-It compiles the pure core to **real WebAssembly** (hand-emitted binary, no
-external assembler) — `Int`, `Float`, and **records as WasmGC structs**:
+It compiles the pure core to **real WebAssembly** (hand-emitted binary, no external
+assembler) — `Int`, `Float`, **records** (WasmGC structs), **sum types** (tagged
+structs + `match`), and **strings** (`array<i8>`):
 
 ```
-$ node pcx.js build examples/geo.px --target wasm -o geo.wasm
-✓ wrote geo.wasm — exports: mkPoint, dist2, hyp2, area
-# in Node: hyp2(3,4)=25 (builds a Point struct, reads its fields); area(3,4)=12
+$ node pcx.js build examples/sumtypes.px --target wasm -o sumtypes.wasm
+✓ wrote sumtypes.wasm — exports: area, test, eval, demo
+# in Node: test()=325, demo()=12  (builds variants, matches on the tag)
 ```
 
-It emits a **real-DOM** browser app with **virtual-DOM diffing** (patches in place,
-preserving node identity), wired events, and asynchronous effects via
-`fetch`/`setTimeout`:
+It emits a **real-DOM** browser app with **virtual-DOM diffing** — patches in place,
+preserves node identity, and reconciles **keyed** lists across reorders — plus wired
+events and asynchronous effects via `fetch`/`setTimeout`:
 
 ```
 $ node pcx.js build ../examples/counter/Main.px --target dom -o counter.html
@@ -88,11 +92,15 @@ entry.px ─▶ resolve modules ─▶ lexer ─▶ parser ─▶ checker ─▶
 | [`src/check.js`](src/check.js) | `match` exhaustiveness (PX0001), conservatively (no false positives). |
 | [`src/types.js`](src/types.js) | Hindley-Milner inference (`--types`): unification, let-generalization, occurs check; **whole-program / cross-module** via `inferTypesLinked`; reports PX0200. |
 | [`src/codegen.js`](src/codegen.js) | AST → JavaScript. Sum types → tagged objects, `match` → guarded `if`-chains, records → objects; each module → an IIFE that returns its exports. |
-| [`src/wasm.js`](src/wasm.js) | AST → WebAssembly binary (hand-emitted, no assembler). Type-directed: `Int`→i32, `Float`→f64, **records → WasmGC structs**. |
-| [`src/runtime.js`](src/runtime.js) | Standard library, constructors, **and the effect runtime** — `Html` renderer (string + **VDOM-diffing** real DOM), `Cmd`, async `Http`/`Time`, `Server`/`Db`, `Program.run` (headless) and `Program.mount` (DOM, patches in place). |
-| [`pcx.js`](pcx.js) | CLI: `check [--types]` / `build [--target js\|wasm\|dom]` / `run`. |
+| [`src/wasm.js`](src/wasm.js) | AST → WebAssembly binary (hand-emitted, no assembler). Type-directed: `Int`→i32, `Float`→f64, **records, sum types, and strings → WasmGC** (structs, tagged structs, `array<i8>`). |
+| [`src/runtime.js`](src/runtime.js) | Standard library, constructors, **and the effect runtime** — `Html` renderer (string + **VDOM-diffing** real DOM with **keyed** reconciliation), `Cmd`, async `Http`/`Time`, `Server`/`Db`, `Program.run` (headless) and `Program.mount` (DOM). |
+| [`src/format.js`](src/format.js) | `pcx fmt`: precedence-aware AST pretty-printer (idempotent, re-parseable). |
+| [`src/lsp.js`](src/lsp.js) | `pcx lsp`: Language Server over stdio — publishes diagnostics from `check` + inference. |
+| [`src/dev.js`](src/dev.js) | `pcx dev`: build-on-request development server for the real-DOM target. |
+| [`pcx.js`](pcx.js) | CLI: `check [--types]` / `build [--target js\|wasm\|dom]` / `run` / `fmt` / `lsp` / `dev`. |
+| [`orchard.js`](orchard.js) | `orchard` package manager: local file registry → `orchard_modules/` (auto-linked by `pcx`). |
 
-## Supported language (v0.2)
+## Supported language (v0.3)
 
 **Multi-module linking** (`import` resolved across sibling files by each file's
 `module` header), `fn` / `let` / `type` / `type alias` / `opaque` / `parse` /
@@ -110,30 +118,35 @@ headlessly, while `Program.mount` drives it against a real DOM.
 
 - **JavaScript** (`build`/`run`) — the default; links modules, runs apps headlessly.
 - **WebAssembly** (`build --target wasm`) — real `.wasm` for the pure core over
-  `Int`, `Float`, and **records** (WasmGC structs: `struct.new`/`struct.get`).
+  `Int`, `Float`, **records** (WasmGC structs), **sum types** (tagged structs +
+  `match`), and **strings** (`array<i8>` + `array.len`).
 - **Real DOM** (`build --target dom`) — a self-contained HTML page; `Program.mount`
-  **diffs the virtual tree and patches in place** (node identity preserved), wires
-  events with persistent listeners, and performs async `Cmd`s (`Http` via `fetch`,
-  `Time` via `setTimeout`).
+  **diffs the virtual tree and patches in place** (node identity preserved, **keyed**
+  reconciliation for reordered lists), wires events with persistent listeners, and
+  performs async `Cmd`s (`Http` via `fetch`, `Time` via `setTimeout`).
 - **Exhaustiveness** (`check`) and **whole-program type inference** (`check --types`,
   catches cross-module errors).
+- **Tooling** — `fmt` (formatter), `lsp` (language server), `dev` (dev server), and
+  `orchard` (package manager).
 
 ## Not yet implemented (see ../docs/appendix-b-reference.md · B.6)
 
-- **Wasm: sum types, strings, closures** — records + `Int`/`Float` compile to
-  WasmGC today; sum types need tagged-struct subtyping, strings need `array<i8>` +
-  a string lib, and closures need closure-conversion + `call_ref`.
-- **Keyed VDOM diffing** — the diff is positional (preserves identity for stable
-  prefixes); keyed reconciliation for reordered lists is next.
+- **Wasm closures / function values** — `Int`/`Float`/records/sum-types/strings
+  compile to WasmGC; first-class functions need closure-conversion + `call_ref`, so
+  functions that take function parameters stay on the JS backend.
 - **The `?` operator** — parsed and flagged (PX0100); not yet lowered.
-- **`pcx fmt` / `lsp` / `dev`** and the **Orchard** registry.
+- **A networked Orchard registry** — the package manager is local/file-based today
+  (no version solving, lockfiles, or remote registry).
+- **Richer LSP** — diagnostics work; hover, completion, go-to-definition, and
+  precise semantic ranges are future work.
 
 ## Tests
 
-`node tests/run.js` runs 27 end-to-end cases: exact-output programs; the three
-apps run headlessly via their `Demo.px` drivers; exhaustiveness acceptance + a
-PX0001 rejection; **type inference** (well-typed accepted incl. multi-module,
-ill-typed rejected incl. a **cross-module** mismatch); **WebAssembly** modules for
-integers and for **Float + records (WasmGC)** instantiated and called in Node; and
-the **VDOM-diffing real-DOM** runtime under a minimal DOM shim (events, async, and
-node-identity preservation).
+`node tests/run.js` runs 36 end-to-end cases covering: exact-output programs and
+the Demo apps; exhaustiveness (accept + PX0001 reject); whole-program type
+inference (accept incl. multi-module, reject incl. a cross-module mismatch);
+**WebAssembly** modules for integers, **Float + records**, **sum types**, and
+**strings**, instantiated and called in Node; the **VDOM-diffing real-DOM** runtime
+(events, async, node identity, and **keyed reconciliation**) under a DOM shim;
+`fmt` idempotence; `lsp` publishing diagnostics over stdio; the `dev` server; and
+`orchard` installing a package that `pcx` then links.

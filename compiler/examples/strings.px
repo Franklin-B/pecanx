@@ -1,0 +1,8 @@
+module Str
+
+-- String literals compile to a WasmGC array<i8> built from a passive data
+-- segment (array.new_data); String.length is array.len.
+
+fn hello(): Int = String.length("hello")
+fn empty(): Int = String.length("")
+fn long(): Int = String.length("abcdefghij")

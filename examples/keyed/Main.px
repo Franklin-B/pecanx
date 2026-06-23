@@ -1,0 +1,33 @@
+module Keyed.Main
+
+-- A keyed list: each <li> carries Attr.key, so when the order changes the runtime
+-- reuses the existing DOM nodes (moving them) instead of recreating them.
+-- Build for the browser: pcx build Main.px --target dom -o keyed.html
+
+type Model = { items: List<Int> }
+
+type Msg =
+  | Rotate
+
+fn init(): (Model, Cmd<Msg>) =
+  ({ items = [1, 2, 3] }, Cmd.none)
+
+fn rotate(xs: List<Int>): List<Int> =
+  match xs {
+    []               -> []
+    [first, ...rest] -> List.append(rest, [first])
+  }
+
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    Rotate -> ({ items = rotate(model.items) }, Cmd.none)
+  }
+
+fn viewItem(n: Int): Html<Msg> =
+  Html.li([Attr.key(Int.toString(n)), Attr.class("item")], [Html.text(Int.toString(n))])
+
+fn view(model: Model): Html<Msg> =
+  Html.div([], [
+    Html.button([Event.onClick(Rotate)], [Html.text("rotate")]),
+    Html.ul([Attr.class("items")], List.map(viewItem, model.items))
+  ])
