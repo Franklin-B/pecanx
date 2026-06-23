@@ -1,13 +1,15 @@
 # 01 · Getting started
 
-> **Status:** `pcx` **v0.1** is real — it lives in [`../compiler`](../compiler) and
-> lexes, parses, checks `match` exhaustiveness, and compiles a useful subset of
-> PecanX to JavaScript, then runs it (`node pcx.js run examples/signup_demo.px`).
-> The commands below describe the full intended experience; the WebAssembly
-> backend, `pcx dev`/`fmt`/`lsp`, cross-module linking, and executable UI/effects
-> are still pending (see [Appendix B](appendix-b-reference.md)). A second runnable
-> artifact is the TypeScript + Zod app in
-> [`../examples/pecanx-signup`](../examples/pecanx-signup).
+> **Status:** `pcx` **v0.2** is real — it lives in [`../compiler`](../compiler). It
+> lexes, parses, checks `match` exhaustiveness, infers and checks types
+> whole-program (Hindley-Milner, `--types`), links multiple modules, and compiles a
+> useful subset of PecanX to **JavaScript, WebAssembly** (`Int`/`Float`/records via
+> WasmGC), or a **virtual-DOM-diffing real-DOM app** (`--target dom`), then runs it
+> (`node pcx.js run examples/signup_demo.px`). The commands below describe the full
+> intended experience; `pcx dev`/`fmt`/`lsp`, Wasm sum-types/strings/closures, and
+> keyed VDOM reconciliation are still pending (see
+> [Appendix B](appendix-b-reference.md)). A second runnable artifact is the
+> TypeScript + Zod app in [`../examples/pecanx-signup`](../examples/pecanx-signup).
 
 ## Install
 

@@ -1,0 +1,17 @@
+module Geo
+
+-- "Beyond integers": Float (f64) arithmetic and a record compiled to a WasmGC
+-- struct. `hyp2` builds a Point (struct.new) and reads its fields (struct.get)
+-- entirely inside Wasm, returning an f64 — so it's callable and checkable from JS.
+
+type Point = { x: Float, y: Float }
+
+fn mkPoint(x: Float, y: Float): Point = { x = x, y = y }
+
+fn dist2(p: Point): Float = p.x * p.x + p.y * p.y
+
+fn hyp2(x: Float, y: Float): Float =
+  let p = mkPoint(x, y)
+  dist2(p)
+
+fn area(w: Float, h: Float): Float = w * h

@@ -120,19 +120,20 @@ Complete example apps for dissemination live in [`examples/`](examples/README.md
 
 PecanX is a **language design with a working compiler and a runnable reference app.**
 
-- **`pcx` v0.1** — a real, zero-dependency compiler in [`compiler/`](compiler): it
-  lexes, parses, checks `match` exhaustiveness, **infers and checks types**
-  (Hindley-Milner, `--types`), **links multiple modules**, and compiles to
-  **JavaScript, WebAssembly** (the pure-integer Kernel — real `.wasm`), or a
-  **real-DOM browser app** (`--target dom`, wired events + async effects). It runs
-  whole Model/Msg/update/view apps — the [counter](examples/counter),
+- **`pcx` v0.2** — a real, zero-dependency compiler in [`compiler/`](compiler): it
+  lexes, parses, checks `match` exhaustiveness, **infers and checks types
+  whole-program** (Hindley-Milner, `--types`, including cross-module errors),
+  **links multiple modules**, and compiles to **JavaScript**, **WebAssembly**
+  (`Int`/`Float`/records via WasmGC structs — real `.wasm`), or a **real-DOM
+  browser app** (`--target dom`) with **virtual-DOM diffing** (patches in place,
+  preserving node identity), wired events, and async effects. It runs whole
+  Model/Msg/update/view apps — the [counter](examples/counter),
   [todo](examples/todo), and [remote-users](examples/remote-users) examples each
-  run via a `Demo.px` driver (`node compiler/pcx.js run examples/counter/Demo.px`).
-  Its test suite is 24 end-to-end cases.
+  run via a `Demo.px` driver. Its test suite is 27 end-to-end cases.
 - **`pecanx-signup`** — the TypeScript + Zod reference app demonstrating isomorphic
   validation on a production stack ([examples/pecanx-signup](examples/pecanx-signup)).
 
-Still ahead: Wasm beyond the integer Kernel (WasmGC), cross-module type inference,
-and a virtual-DOM-diffing production runtime — see
+Still ahead: Wasm sum types / strings / closures, keyed VDOM reconciliation, and
+the `pcx fmt`/`lsp`/`dev` tooling — see
 [Appendix B · Roadmap](docs/appendix-b-reference.md). These docs describe the
 language as designed; forward-looking parts are marked.

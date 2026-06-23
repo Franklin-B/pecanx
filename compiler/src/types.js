@@ -1,4 +1,4 @@
-// PecanX type inference (pcx v0.1) — Hindley-Milner with unification,
+// PecanX type inference (pcx v0.2) — Hindley-Milner with unification,
 // let-generalization, and an occurs check.
 //
 // Opt-in (`pcx check --types`). It infers and checks the functional core —
@@ -113,6 +113,59 @@ export function inferTypes(program) {
 }
 
 function declName(d) { return d.kind === "Fn" ? `${d.name}` : d.kind === "Let" ? `let ${d.name}` : d.kind; }
+
+// Whole-program inference across a linked set of modules. Imported names resolve
+// to the *exporting* module's actual types, so cross-module type errors are
+// caught. Module qualifiers (`import M as Q` or plain `import M`) bind `Q` to a
+// record of M's exports, so `Q.member` type-checks.
+export function inferTypesLinked(modules) {
+  COUNTER = 0;
+  const diags = [];
+  const ctx = buildContext({ decls: modules.flatMap((m) => m.program.decls) });
+  const env = new Map();
+  for (const [n, s] of ctx.ctors) env.set(n, s);
+
+  // hoist every module's fn signatures and top-level lets
+  for (const m of modules) for (const d of m.program.decls) {
+    if (d.kind === "Fn") env.set(d.name, sigScheme(d, ctx));
+    else if (d.kind === "Let") env.set(d.name, mono(tvar()));
+  }
+
+  // per-module export tables (for qualified `Alias.member` access)
+  const exportsOf = new Map();
+  for (const m of modules) {
+    const tbl = new Map();
+    for (const d of m.program.decls) {
+      if (d.kind === "Fn") tbl.set(d.name, env.get(d.name));
+      else if (d.kind === "TypeSum") for (const v of d.variants) tbl.set(v.name, ctx.ctors.get(v.name));
+      else if (d.kind === "Opaque") tbl.set(d.name, ctx.ctors.get(d.name));
+      else if (d.kind === "Let") tbl.set(d.name, env.get(d.name));
+    }
+    exportsOf.set(m.name, tbl);
+  }
+
+  for (const m of modules) for (const d of m.program.decls) {
+    if (d.kind !== "Import") continue;
+    const exp = exportsOf.get(d.name);
+    const qualifier = d.alias || (!d.exposing ? d.name.split(".").pop() : null);
+    if (qualifier) {
+      if (exp) { const f = new Map(); for (const [k, sch] of exp) f.set(k, instantiate(sch)); env.set(qualifier, mono(trec(f))); }
+      else env.set(qualifier, mono(tvar())); // external module → trusted
+    }
+    if (!exp && d.exposing) for (const nm of d.exposing) if (!env.has(nm)) env.set(nm, mono(tvar()));
+  }
+
+  for (const m of modules) for (const d of m.program.decls) {
+    try {
+      if (d.kind === "Fn") inferFn(d, env, ctx);
+      else if (d.kind === "Let") { const t = infer(d.expr, env, ctx); unify(t, instantiate(env.get(d.name))); if (d.type) unify(t, fromAnn(d.type, new Map(), ctx)); }
+    } catch (e) {
+      if (e instanceof TypeErr) diags.push({ severity: "error", code: "PX0200", file: m.file, message: `${m.name}.${declName(d)}: ${e.message}` });
+      else throw e;
+    }
+  }
+  return diags;
+}
 
 function inferFn(fn, env, ctx) {
   const scope = new Map();

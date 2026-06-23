@@ -1,6 +1,6 @@
-// PecanX static checks (pcx v0.1).
+// PecanX static checks (pcx v0.2).
 //
-// v0.1 ships the language's signature check — `match` exhaustiveness — plus a
+// v0.2 ships the language's signature check — `match` exhaustiveness — plus a
 // scan for the `?` operator (not yet supported by the JS backend). Full
 // Hindley-Milner type inference is on the roadmap (see appendix-b-reference.md);
 // this checker is deliberately conservative: it only reports a non-exhaustive
@@ -68,7 +68,7 @@ export function check(program) {
         for (const a of e.arms) { if (a.guard) walk(a.guard); walk(a.body); }
         return;
       case "Try":
-        diags.push({ severity: "error", code: "PX0100", message: "The `?` operator is not yet supported by the pcx v0.1 backend." });
+        diags.push({ severity: "error", code: "PX0100", message: "The `?` operator is not yet supported by the pcx v0.2 backend." });
         walk(e.expr); return;
       case "StrInterp":
         for (const p of e.parts) if (p.kind === "expr") walk(p.expr);

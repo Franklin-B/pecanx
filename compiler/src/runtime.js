@@ -1,4 +1,4 @@
-// PecanX runtime prelude (pcx v0.1).
+// PecanX runtime prelude (pcx v0.2).
 //
 // This file is NOT imported — `pcx` reads it as text and prepends it to every
 // compiled program, producing a single self-contained JS module. It therefore
@@ -44,7 +44,7 @@ function $stub(name) {
   return new Proxy({}, {
     get: (_t, prop) => (...args) => {
       throw new Error(
-        "pcx v0.1: " + name + "." + String(prop) +
+        "pcx v0.2: " + name + "." + String(prop) +
         " is not executable yet (UI/effect/FFI backends are pending — see docs/appendix-b-reference.md)"
       );
     },
@@ -97,6 +97,71 @@ function $el(node, dispatch) {
   }
   for (const kid of node.kids) el.appendChild($el(kid, dispatch));
   return el;
+}
+
+// --- virtual-DOM diffing (production runtime) -------------------------------
+// Builds real DOM, then patches it in place against the previous virtual tree:
+// unchanged element nodes keep their identity (and input focus/value), only
+// changed text/attrs are touched, and a single persistent listener per event
+// type dispatches the *current* handler (updated on every patch).
+function $createDom(v, dispatch) {
+  const doc = globalThis.document;
+  if (v == null) return doc.createTextNode("");
+  if (v.$html === "#text") return doc.createTextNode(v.text);
+  const el = doc.createElement(v.$html);
+  el.__h = {};            // current handler per event type
+  el.__on = {};           // event types we've already attached a listener for
+  $applyAttrs(el, [], v.attrs, dispatch);
+  for (const kid of v.kids) el.appendChild($createDom(kid, dispatch));
+  return el;
+}
+
+function $ensureListener(el, type, dispatch) {
+  if (el.__on[type]) return;
+  el.__on[type] = true;
+  el.addEventListener(type, (e) => {
+    const h = el.__h[type];
+    if (h == null) return;
+    if (type === "input") dispatch(h(e && e.target ? e.target.value : ""));
+    else { if (type === "submit" && e && e.preventDefault) e.preventDefault(); dispatch(h); }
+  });
+}
+
+function $applyAttrs(el, oldAttrs, newAttrs, dispatch) {
+  const oldM = {}, newM = {}, seenEv = {};
+  for (const a of oldAttrs) if (a && !a.event) oldM[a.k] = a.v;
+  for (const a of newAttrs) if (a && !a.event) newM[a.k] = a.v;
+  for (const k in newM) {
+    if (oldM[k] === newM[k]) continue;
+    if (k === "disabled") { if (newM[k]) el.setAttribute("disabled", ""); else el.removeAttribute("disabled"); }
+    else { el.setAttribute(k, String(newM[k])); if (k === "value") { try { el.value = newM[k]; } catch {} } }
+  }
+  for (const k in oldM) if (!(k in newM)) el.removeAttribute(k);
+  for (const a of newAttrs) {
+    if (!a || !a.event) continue;
+    el.__h[a.event] = a.event === "input" ? a.fn : a.msg;
+    seenEv[a.event] = true;
+    $ensureListener(el, a.event, dispatch);
+  }
+  for (const t in el.__h) if (!seenEv[t]) el.__h[t] = null;
+}
+
+function $patch(parent, dom, oldV, newV, dispatch) {
+  const oldText = oldV && oldV.$html === "#text";
+  const newText = newV && newV.$html === "#text";
+  if (!oldV || oldText !== newText || (!oldText && oldV.$html !== newV.$html)) {
+    const fresh = $createDom(newV, dispatch);
+    parent.replaceChild(fresh, dom);
+    return fresh;
+  }
+  if (newText) { if (oldV.text !== newV.text) { try { dom.textContent = newV.text; } catch { dom.data = newV.text; } } return dom; }
+  $applyAttrs(dom, oldV.attrs, newV.attrs, dispatch);
+  const kids = dom.childNodes;
+  const common = Math.min(oldV.kids.length, newV.kids.length);
+  for (let i = 0; i < common; i++) $patch(dom, kids[i], oldV.kids[i], newV.kids[i], dispatch);
+  for (let i = oldV.kids.length; i < newV.kids.length; i++) dom.appendChild($createDom(newV.kids[i], dispatch));
+  for (let i = oldV.kids.length - 1; i >= newV.kids.length; i--) dom.removeChild(dom.childNodes[i]);
+  return dom;
 }
 
 // --- the standard library, namespaced under $P -----------------------------
@@ -188,7 +253,7 @@ const $P = {
     isDigit: (c) => /^[0-9]$/.test(c),
   },
 
-  // --- view layer (renders to a string in the headless v0.1 runtime) --------
+  // --- view layer (renders to a string in the headless v0.2 runtime) --------
   Html: {
     div: (a, k) => $node("div", a, k),
     span: (a, k) => $node("span", a, k),
@@ -263,20 +328,25 @@ const $P = {
     // Real-DOM driver: mounts to a DOM element, wires events, re-renders on every
     // update, and performs async Cmds (Http/Time) via Promises. Runs in a browser.
     mount: (root, init, update, view) => {
-      let model;
-      const render = () => {
-        const tree = $el(view(model), dispatch);
-        if (root.replaceChildren) root.replaceChildren(tree);
-        else { while (root.firstChild) root.removeChild(root.firstChild); root.appendChild(tree); }
-      };
+      let model, tree, dom;
       const step = (cmd) => {
         if (!cmd || cmd.tag === "none") return;
         if (cmd.tag === "batch") { for (const c of cmd.cmds) step(c); return; }
         if (cmd.tag === "perform") { dispatch(cmd.toMsg(cmd.value)); return; }
         if (cmd.tag === "async") { Promise.resolve(cmd.run()).then((v) => dispatch(cmd.toMsg(v))); return; }
       };
-      const dispatch = (msg) => { const r = update(msg, model); model = r[0]; render(); step(r[1]); };
-      const i = init(); model = i[0]; render(); step(i[1]);
+      const dispatch = (msg) => {
+        const r = update(msg, model); model = r[0];
+        const next = view(model);
+        dom = $patch(root, dom, tree, next, dispatch); // diff & patch in place
+        tree = next;
+        step(r[1]);
+      };
+      const i = init(); model = i[0];
+      tree = view(model);
+      dom = $createDom(tree, dispatch);
+      root.appendChild(dom);
+      step(i[1]);
       return $unit;
     },
   },

@@ -1,0 +1,4 @@
+module XmodB
+-- Cross-module type error: calls XmodA.double (Int -> Int) with a Bool.
+import XmodA exposing (double)
+fn bad(): Int = double(true)

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// pcx — the PecanX compiler (v0.1).
+// pcx — the PecanX compiler (v0.2).
 //
-//   pcx check <file.px>          type/exhaustiveness checks (across imported modules)
-//   pcx build <file.px> [-o out] compile + link to JavaScript (.mjs)
-//   pcx run   <file.px>          compile, link, and execute (calls main() if present)
+//   pcx check [--types] <file.px>        exhaustiveness + whole-program HM inference
+//   pcx build <file.px> [--target js|wasm|dom] [-o out]
+//   pcx run   <file.px>                  compile, link, and execute (calls main())
 //
-// v0.1 targets JavaScript. It links multiple .px modules (resolving `import` by
-// each file's `module` header) and ships a headless effect runtime (Html renders
-// to a string; Cmd/server fn run synchronously). The Wasm backend and full type
-// inference remain on the roadmap (see ../docs/appendix-b-reference.md).
+// v0.2 links multiple .px modules (resolving `import` by each file's `module`
+// header) and targets JavaScript, WebAssembly (Int/Float/records via WasmGC), or a
+// virtual-DOM-diffing real-DOM app. See ../docs/appendix-b-reference.md for the
+// remaining roadmap (Wasm sum-types/strings/closures, keyed VDOM, fmt/lsp/dev).
 
 import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,7 +19,7 @@ import { spawnSync } from "node:child_process";
 import { LexError } from "./src/lexer.js";
 import { ParseError } from "./src/parser.js";
 import { check } from "./src/check.js";
-import { inferTypes } from "./src/types.js";
+import { inferTypesLinked } from "./src/types.js";
 import { generateLinked, CodegenError } from "./src/codegen.js";
 import { resolveModules } from "./src/link.js";
 import { compileWasm } from "./src/wasm.js";
@@ -55,13 +55,9 @@ function main() {
   // Static checks across every reachable module.
   const wantTypes = rest.includes("--types");
   let errors = 0;
-  for (const mod of ordered) {
-    const diags = wantTypes ? [...check(mod.program), ...inferTypes(mod.program)] : check(mod.program);
-    for (const d of diags) {
-      console.error(`${mod.file}: ${d.severity} [${d.code}] ${d.message}`);
-      if (d.severity === "error") errors++;
-    }
-  }
+  const report = (file, d) => { console.error(`${file}: ${d.severity} [${d.code}] ${d.message}`); if (d.severity === "error") errors++; };
+  for (const mod of ordered) for (const d of check(mod.program)) report(mod.file, d);
+  if (wantTypes) for (const d of inferTypesLinked(ordered)) report(d.file, d);
 
   if (cmd === "check") {
     if (errors) { console.error(`pcx: ${errors} error(s).`); process.exit(1); }
@@ -143,7 +139,7 @@ ${script}
 }
 
 function usage(code) {
-  console.log(`pcx — the PecanX compiler (v0.1)
+  console.log(`pcx — the PecanX compiler (v0.2)
 
 usage:
   pcx check [--types] <file.px>   exhaustiveness checks; --types adds Hindley-Milner inference

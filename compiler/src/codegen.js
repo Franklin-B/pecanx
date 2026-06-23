@@ -1,4 +1,4 @@
-// PecanX → JavaScript code generator (pcx v0.1).
+// PecanX → JavaScript code generator (pcx v0.2).
 
 import { STDLIB } from "./parser.js";
 
@@ -129,7 +129,7 @@ function genExpr(e) {
     case "Pipe":
       return `${genExpr(e.right)}(${genExpr(e.left)})`;
     case "Try":
-      throw new CodegenError("The `?` operator is not supported by the pcx v0.1 JS backend yet.");
+      throw new CodegenError("The `?` operator is not supported by the pcx v0.2 JS backend yet.");
     default:
       throw new CodegenError(`Cannot generate expression: ${e.kind}`);
   }

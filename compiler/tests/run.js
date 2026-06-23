@@ -130,6 +130,7 @@ for (const t of CHECK_FAIL) {
 const TYPES_OK = [
   "examples/types/ok.px", "examples/math.px",
   "../examples/todo/Main.px", "../examples/remote-users/Main.px", "../examples/counter/Main.px",
+  "../examples/todo/Demo.px", // multi-module (Demo → Main → Domain) under linked inference
 ];
 for (const f of TYPES_OK) {
   const r = pcx(["check", "--types", resolve(ROOT, f)]);
@@ -142,6 +143,11 @@ for (const [n, frag] of TYPES_BAD) {
   if (r.status !== 0 && r.err.includes("PX0200") && r.err.includes(frag)) ok(`types rejects: ${n}`);
   else bad(`types rejects: ${n}`, `status=${r.status}\n${r.err}`);
 }
+{
+  const r = pcx(["check", "--types", resolve(ROOT, "examples/xmod/B.px")]);
+  if (r.status !== 0 && r.err.includes("PX0200") && r.err.includes("Int with Bool") && r.err.includes("XmodB")) ok("types rejects: cross-module arg mismatch");
+  else bad("types cross-module", `status=${r.status}\n${r.err}`);
+}
 
 // --- WebAssembly backend (emit a real .wasm, run it in Node) ----------------
 try {
@@ -152,10 +158,23 @@ try {
   const cases = [["fib(10)", x.fib(10), 55], ["fact(5)", x.fact(5), 120], ["gcd(48,36)", x.gcd(48, 36), 12], ["poly(3)", x.poly(3), 37]];
   const wrong = cases.filter(([, got, want]) => got !== want);
   const eligibleOk = exports.includes("fib") && exports.includes("poly") && !exports.includes("greet");
-  if (wrong.length === 0 && eligibleOk) ok("wasm backend (real .wasm runs in Node)");
+  if (wrong.length === 0 && eligibleOk) ok("wasm backend: integers (real .wasm runs in Node)");
   else bad("wasm backend", `wrong=${JSON.stringify(wrong)} exports=${JSON.stringify(exports)}`);
 } catch (e) {
   bad("wasm backend", String((e && e.stack) || e));
+}
+
+try {
+  const program = parse(lex(readFileSync(resolve(ROOT, "examples/geo.px"), "utf8")));
+  const { bytes, exports } = compileWasm(program);
+  const { instance } = await WebAssembly.instantiate(bytes);
+  const x = instance.exports;
+  const cases = [["hyp2(3,4)", x.hyp2(3, 4), 25], ["area(3,4)", x.area(3, 4), 12], ["hyp2(5,12)", x.hyp2(5, 12), 169]];
+  const wrong = cases.filter(([, g, w]) => g !== w);
+  if (wrong.length === 0 && exports.includes("mkPoint")) ok("wasm backend: Float + records (WasmGC structs)");
+  else bad("wasm records", `wrong=${JSON.stringify(wrong)} exports=${JSON.stringify(exports)}`);
+} catch (e) {
+  bad("wasm records", String((e && e.stack) || e));
 }
 
 // --- real-DOM runtime (verified in Node under a minimal DOM shim) -----------
@@ -176,13 +195,16 @@ async function loadDom(entryFile) {
 try {
   const root = await loadDom(resolve(ROOT, "../examples/counter/Main.px"));
   const initial = root.textContent.includes("Count: 0");
-  root.find((n) => n.tag === "button" && n.textContent === "+").fire("click");
+  const plus = root.find((n) => n.tag === "button" && n.textContent === "+");
+  plus.fire("click");
   const after1 = root.textContent.includes("Count: 1");
-  root.find((n) => n.tag === "button" && n.textContent === "+").fire("click");
+  // diff preserves identity: the "+" button is the *same* DOM node after re-render
+  const sameNode = root.find((n) => n.tag === "button" && n.textContent === "+") === plus;
+  plus.fire("click");
   const after2 = root.textContent.includes("Count: 2");
-  if (initial && after1 && after2) ok("dom runtime: click events update the real DOM");
-  else bad("dom events", `initial=${initial} after1=${after1} after2=${after2} :: ${root.textContent}`);
-} catch (e) { bad("dom events", String((e && e.stack) || e)); }
+  if (initial && after1 && after2 && sameNode) ok("dom runtime: VDOM diff patches in place (events + node identity)");
+  else bad("dom diff", `initial=${initial} after1=${after1} after2=${after2} sameNode=${sameNode} :: ${root.textContent}`);
+} catch (e) { bad("dom diff", String((e && e.stack) || e)); }
 
 try {
   const root = await loadDom(resolve(ROOT, "../examples/async/Loader.px"));

@@ -7,18 +7,19 @@ the drawing board.
 
 A note on status before we begin. PecanX is a *designed* language. The grammar,
 the type system, and the standard library described throughout this manual are
-fixed and authoritative — they are the contract. The **toolchain** is now partly
-built: a working compiler, **`pcx` v0.1**, lives in [`../compiler`](../compiler).
+fixed and authoritative — they are the contract. The **toolchain** is now largely
+built: a working compiler, **`pcx` v0.2**, lives in [`../compiler`](../compiler).
 It lexes, parses, checks `match` exhaustiveness, **infers and checks types
-(Hindley-Milner, `--types`)**, **links multiple modules**, and compiles to
-**JavaScript, WebAssembly, or a real-DOM browser app**, then runs it — including
-whole Model/Msg/update/view apps (headlessly via `Program.run`, or in a browser
-via `Program.mount` with wired events and async `fetch`/`setTimeout` effects). Try
+whole-program (Hindley-Milner, `--types`, incl. cross-module errors)**, **links
+multiple modules**, and compiles to **JavaScript, WebAssembly** (`Int`/`Float`/
+records via WasmGC), **or a real-DOM browser app** with virtual-DOM diffing, then
+runs it — including whole Model/Msg/update/view apps (headlessly via `Program.run`,
+or in a browser via `Program.mount` with wired events and async effects). Try
 `node pcx.js run examples/signup_demo.px`, the `Demo.px` drivers under
-[`../examples`](../examples), `--target wasm` on `examples/math.px`, or `--types`.
-What's *still* pending — Wasm beyond the integer Kernel, cross-module type
-inference, a virtual-DOM-diffing production runtime, the dev server, and the
-Orchard registry — is marked **(forward-looking)** where it appears. A second
+[`../examples`](../examples), `--target wasm` on `examples/geo.px`, or `--types`.
+What's *still* pending — Wasm sum types/strings/closures, keyed VDOM
+reconciliation, the dev server, and the Orchard registry — is marked
+**(forward-looking)** where it appears. A second
 runnable artifact is the TypeScript + Zod reference app at
 [`../examples/pecanx-signup`](../examples/pecanx-signup), which demonstrates the
 isomorphic-validation idea on a production stack today.
@@ -123,11 +124,11 @@ local-lib = { path = "../local-lib" }      # path dependency, no registry fetch
 
 ---
 
-## B.2 The `pcx` CLI **(partly implemented — `check` / `build` / `run` work in v0.1)**
+## B.2 The `pcx` CLI **(implemented in v0.2 — `check [--types]` / `build [--target js|wasm|dom]` / `run`)**
 
-`pcx` is the PecanX compiler and project driver. In v0.1, `check`, `build`, and
-`run` are implemented (JavaScript backend); `dev`, `fmt`, and `lsp` below are
-forward-looking.
+`pcx` is the PecanX compiler and project driver. In v0.2, `check` (with optional
+`--types`), `build` (targets `js` / `wasm` / `dom`), and `run` are implemented;
+`dev`, `fmt`, and `lsp` below are forward-looking.
 
 ```bash
 pcx <command> [options]
@@ -176,8 +177,9 @@ orchard <command> [options]
 PecanX leans hard on the compiler: the language deliberately removes whole
 classes of failure (no `null`, no exceptions, mandatory exhaustiveness) so that
 mistakes surface as diagnostics rather than runtime surprises. The table below
-lists representative codes and the typical fix. **(`pcx` v0.1 already emits
-`PX0001` — non-exhaustive match — and `PX0100` for the unsupported `?`; the
+lists representative codes and the typical fix. **(`pcx` v0.2 already emits
+`PX0001` — non-exhaustive match — `PX0200` for type errors (`--types`), and
+`PX0100` for the unsupported `?`; the
 remaining codes are forward-looking, but each maps directly to a rule stated
 elsewhere in this manual.)**
 
@@ -216,21 +218,23 @@ competes with for full-stack web work.)
 ## B.6 Roadmap & status
 
 This section tracks the gap between the *language contract* (fixed) and the
-*running tooling*. Much of the v0.1 toolchain now exists (first item); the rest is
+*running tooling*. Much of the toolchain now exists (first item); the rest is
 forward-looking.
 
-- **The `pcx` toolchain — shipped in v0.1.** [`../compiler`](../compiler) lexes,
-  parses, checks `match` exhaustiveness, **infers and checks types**
-  (Hindley-Milner, `--types`: unbound vars, mismatches, arity, occurs check),
-  **links multiple modules** (`import` resolved by `module` header), and compiles
-  to **JavaScript**, **WebAssembly** (real `.wasm` for the pure-integer Kernel), or
-  a **real-DOM browser app** (`--target dom`, with wired events and asynchronous
-  `fetch`/`setTimeout` effects via `Program.mount`). Headless apps run via
+- **The `pcx` toolchain — shipped (v0.2).** [`../compiler`](../compiler) lexes,
+  parses, checks `match` exhaustiveness, **infers and checks types whole-program**
+  (Hindley-Milner, `--types`: unbound vars, mismatches, arity, occurs check, **and
+  cross-module errors**), **links multiple modules** (`import` resolved by `module`
+  header), and compiles to **JavaScript**, **WebAssembly** (real `.wasm` for the
+  pure core over `Int`, `Float`, and **records as WasmGC structs**), or a
+  **real-DOM browser app** (`--target dom`) whose runtime **diffs the virtual tree
+  and patches in place** (node identity preserved), wiring events and asynchronous
+  `fetch`/`setTimeout` effects via `Program.mount`. Headless apps run via
   `Program.run` (the `counter` / `todo` / `remote-users` `Demo.px` drivers).
-  *Still pending:* Wasm beyond the integer Kernel (records/sums/strings/closures
-  need WasmGC); cross-module type inference (each module is checked independently,
-  imports trusted); a virtual-DOM-diffing production runtime; the formatter
-  (`pcx fmt`), language server (`pcx lsp`), and dev server (`pcx dev`).
+  *Still pending:* Wasm sum types (tagged-struct subtyping), strings (`array<i8>` +
+  a string lib), and closures (closure-conversion + `call_ref`); keyed VDOM
+  reconciliation for reordered lists; the formatter (`pcx fmt`), language server
+  (`pcx lsp`), and dev server (`pcx dev`).
 - **Algebraic effects.** The current effect model is the Elm-style
   `Cmd<Msg>` / `update` loop (see
   [Effects & Architecture](06-effects-and-architecture.md)). A more general
