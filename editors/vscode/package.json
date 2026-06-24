@@ -8,9 +8,14 @@
   "engines": { "vscode": "^1.75.0" },
   "categories": ["Programming Languages", "Linters", "Formatters"],
   "keywords": ["pecanx", "pcx", "px", "wasm", "functional"],
+  "icon": "icon.png",
   "main": "./src/extension.js",
   "activationEvents": ["workspaceContains:**/*.px"],
-  "repository": { "type": "git", "url": "https://github.com/pecanx/pecanx" },
+  "repository": { "type": "git", "url": "https://github.com/Franklin-B/pecanx.git" },
+  "scripts": {
+    "package": "vsce package",
+    "icon": "node scripts/make-icon.mjs"
+  },
   "contributes": {
     "languages": [
       {
@@ -94,6 +99,7 @@
   },
   "devDependencies": {
     "@types/node": "^18.19.0",
-    "@types/vscode": "^1.75.0"
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.0.0"
   }
 }

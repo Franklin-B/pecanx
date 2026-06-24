@@ -1,6 +1,9 @@
 .vscode/**
 .gitignore
+scripts/**
 **/*.map
+**/*.vsix
+package-lock.json
 node_modules/.bin/**
 node_modules/**/test/**
 node_modules/**/*.md

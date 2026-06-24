@@ -37,11 +37,14 @@ Then either:
 
 - **Run it live:** open `editors/vscode` in VS Code and press <kbd>F5</kbd> to launch
   an Extension Development Host with PecanX loaded, or
-- **Package a .vsix:** `npx @vscode/vsce package` and install the resulting file via
-  *Extensions → ⋯ → Install from VSIX…*.
+- **Package a `.vsix`:** `npm run package` produces `pecanx-<version>.vsix`. Install it
+  with *Extensions → ⋯ → Install from VSIX…*, or `code --install-extension pecanx-0.3.0.vsix`.
 
 Open any `.px` file (try `examples/counter/Main.px`) and you'll get squiggles,
 hover, and the PecanX commands.
+
+> The committed `icon.png` is reproducible: `npm run icon` regenerates it from
+> [`scripts/make-icon.mjs`](scripts/make-icon.mjs) (a zero-dependency PNG encoder).
 
 > Live diagnostics need `npm install` to have been run (for `vscode-languageclient`).
 > If you skip it, syntax highlighting, snippets, and all the Run/Build/Format

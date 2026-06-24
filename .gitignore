@@ -5,8 +5,9 @@ node_modules/
 dist/
 *.wasm
 *.mjs
-# ...but the playground's static server is hand-written source, not build output
+# ...but these hand-written .mjs sources are not build output
 !playground/serve.mjs
+!editors/vscode/scripts/make-icon.mjs
 
 # editor / tooling local state
 .claude/settings.local.json
