@@ -127,8 +127,8 @@ local-lib = { path = "../local-lib" }      # path dependency, no registry fetch
 ## B.2 The `pcx` CLI **(implemented in v0.3 — `check [--types]` / `build [--target js|wasm|dom]` / `run` / `fmt` / `lsp` / `dev`)**
 
 `pcx` is the PecanX compiler and project driver. In v0.3, `check` (with optional
-`--types`), `build` (targets `js` / `wasm` / `dom`), and `run` are implemented;
-`dev`, `fmt`, and `lsp` below are forward-looking.
+`--types`), `build` (targets `js` / `wasm` / `dom`), `run`, `fmt`, `lsp`, and
+`dev` are implemented; `new` and `test` below are forward-looking.
 
 ```bash
 pcx <command> [options]
@@ -143,7 +143,7 @@ pcx <command> [options]
 | `pcx run` | `--target <js\|server>`, `-- <args>` | Build then execute an executable package (e.g. a server entry). Arguments after `--` are passed through. |
 | `pcx test` | `--filter <pat>`, `--watch` | Discover and run tests (modules/functions under `tests/`). Reports pass/fail counts. |
 | `pcx fmt` | `--check`, `--stdin` | Format `.px` sources to canonical style (2-space indent, the conventions in this manual). `--check` exits non-zero if any file would change. |
-| `pcx lsp` | `--stdio` | Run the language server for editor integration: diagnostics, hover types, go-to-definition, completion. |
+| `pcx lsp` | (stdio) | Run the language server for editor integration. v0.3: diagnostics with precise ranges, hover (keyword/stdlib docs + function signatures), and document outline. Go-to-definition / completion are forward-looking. |
 
 Global flags accepted by every command: `--manifest <path>` (point at a
 non-default `pecanx.toml`), `--quiet`, `--verbose`, `--version`, `--help`.
@@ -230,12 +230,18 @@ forward-looking.
   browser app** (`--target dom`) whose runtime **diffs the virtual tree and patches
   in place** with **keyed reconciliation** for reordered lists, wiring events and
   asynchronous `fetch`/`setTimeout` effects via `Program.mount`. It also ships a
-  **formatter** (`pcx fmt`), a **language server** (`pcx lsp`, diagnostics over
+  **formatter** (`pcx fmt`), a **language server** (`pcx lsp` — diagnostics with
+  precise source ranges, hover docs/signatures, and a document outline, over
   stdio), a **dev server** (`pcx dev`), and **Orchard** (`orchard`), a local
   file-based package manager that installs into `orchard_modules/` (auto-linked).
   *Still pending:* Wasm closures / first-class functions (closure-conversion +
   `call_ref`); the `?` operator's lowering; a networked Orchard registry (version
-  solving, lockfiles); and richer LSP features (hover, completion, semantic ranges).
+  solving, lockfiles); and deeper LSP features (completion, go-to-definition, rename).
+- **Editor & playground — shipped.** A **VS Code extension**
+  ([`../editors/vscode`](../editors/vscode)) drives `pcx lsp` for live squiggles
+  plus Run / Build (JS·Wasm·DOM) / Format / Dev-server commands, and a **browser
+  playground** ([`../playground`](../playground)) runs the whole compiler
+  client-side (live diagnostics, DOM preview, console, generated JS, real `.wasm`).
 - **Algebraic effects.** The current effect model is the Elm-style
   `Cmd<Msg>` / `update` loop (see
   [Effects & Architecture](06-effects-and-architecture.md)). A more general

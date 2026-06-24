@@ -55,6 +55,7 @@ export function check(program) {
         severity: "error",
         code: "PX0001",
         message: `Non-exhaustive match on ${typeName}: missing case${missing.length > 1 ? "s" : ""} ${missing.join(", ")}`,
+        line: m.line, col: m.col,
       });
     }
   }
@@ -68,7 +69,7 @@ export function check(program) {
         for (const a of e.arms) { if (a.guard) walk(a.guard); walk(a.body); }
         return;
       case "Try":
-        diags.push({ severity: "error", code: "PX0100", message: "The `?` operator is not yet supported by the pcx v0.3 backend." });
+        diags.push({ severity: "error", code: "PX0100", message: "The `?` operator is not yet supported by the pcx v0.3 backend.", line: e.line, col: e.col });
         walk(e.expr); return;
       case "StrInterp":
         for (const p of e.parts) if (p.kind === "expr") walk(p.expr);

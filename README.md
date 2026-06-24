@@ -127,14 +127,33 @@ PecanX is a **language design with a working compiler and a runnable reference a
   (`Int`/`Float`/**records**/**sum types**/**strings** via WasmGC — real `.wasm`),
   or a **real-DOM browser app** (`--target dom`) with **virtual-DOM diffing** and
   **keyed reconciliation**. It also ships a formatter (`fmt`), a language server
-  (`lsp`), a dev server (`dev`), and **Orchard** (`orchard`) — a local package
-  manager. The [counter](examples/counter), [todo](examples/todo), and
+  (`lsp`) — diagnostics with precise ranges, hover, and document outline — a dev
+  server (`dev`), and **Orchard** (`orchard`) — a local package manager. The
+  [counter](examples/counter), [todo](examples/todo), and
   [remote-users](examples/remote-users) apps each run via a `Demo.px` driver. Its
-  test suite is 36 end-to-end cases.
+  test suite is 37 end-to-end cases.
+- **A VS Code extension** ([editors/vscode](editors/vscode)) and a **browser
+  playground** ([playground](playground)) — two write-and-compile surfaces built
+  on the compiler above; see *Write and compile it*, below.
 - **`pecanx-signup`** — the TypeScript + Zod reference app demonstrating isomorphic
   validation on a production stack ([examples/pecanx-signup](examples/pecanx-signup)).
 
 Still ahead: Wasm closures / first-class functions, the `?` operator, a networked
-Orchard registry, and richer LSP features — see
+Orchard registry, and deeper LSP features (go-to-definition, rename) — see
 [Appendix B · Roadmap](docs/appendix-b-reference.md). These docs describe the
 language as designed; forward-looking parts are marked.
+
+## Write and compile it
+
+Two ways to write PecanX and compile it in one place, both built directly on `pcx`:
+
+- **VS Code extension** — [`editors/vscode`](editors/vscode). Plugs `pcx lsp` in for
+  **live diagnostics** (exhaustiveness + type errors squiggle the exact `match` or
+  declaration as you type), adds `.px` **syntax highlighting**, **hover**, an
+  **outline**, and wires **Run / Build (JS·Wasm·DOM) / Format / Dev-server** into
+  the Command Palette. `cd editors/vscode && npm install`, then press <kbd>F5</kbd>.
+- **Browser playground** — [`playground`](playground). The *same* compiler, running
+  entirely client-side (it's pure, zero-dependency JS): type PecanX, hit **Run**,
+  and see live diagnostics, a mounted DOM app, console output, the generated JS, or
+  a real downloadable `.wasm` — no install. `node playground/serve.mjs`, then open
+  <http://localhost:5173/playground/>.

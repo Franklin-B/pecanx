@@ -152,6 +152,9 @@ for (const [n, frag] of TYPES_BAD) {
 }
 
 // --- pcx fmt (idempotent + structure-preserving) ----------------------------
+// Structure comparison ignores source positions (line/col), which are incidental
+// metadata that naturally shifts when code is reformatted.
+const stripPos = (v) => JSON.stringify(v, (k, val) => (k === "line" || k === "col" ? undefined : val));
 for (const f of ["examples/signup_demo.px", "examples/sumtypes.px", "../examples/todo/Main.px"]) {
   try {
     const src = readFileSync(resolve(ROOT, f), "utf8");
@@ -159,8 +162,8 @@ for (const f of ["examples/signup_demo.px", "examples/sumtypes.px", "../examples
     const f1 = formatProgram(a1);
     const a2 = parse(lex(f1));
     const f2 = formatProgram(a2);
-    if (f1 === f2 && JSON.stringify(a1) === JSON.stringify(a2)) ok(`fmt: idempotent + structure-preserving (${f.split(/[\\/]/).pop()})`);
-    else bad(`fmt: ${f}`, `idempotent=${f1 === f2} equivalent=${JSON.stringify(a1) === JSON.stringify(a2)}`);
+    if (f1 === f2 && stripPos(a1) === stripPos(a2)) ok(`fmt: idempotent + structure-preserving (${f.split(/[\\/]/).pop()})`);
+    else bad(`fmt: ${f}`, `idempotent=${f1 === f2} equivalent=${stripPos(a1) === stripPos(a2)}`);
   } catch (e) { bad(`fmt: ${f}`, String((e && e.stack) || e)); }
 }
 
@@ -319,6 +322,24 @@ try {
   const linked = (runR.stdout || "").includes("hi from orchard");
   if (addR.status === 0 && copied && recorded && linked) ok("orchard: add installs a package; pcx links it");
   else bad("orchard", `status=${addR.status} copied=${copied} recorded=${recorded} linked=${linked}\n${addR.stderr}\n${runR.stderr}`);
+}
+
+// --- browser-safety ---------------------------------------------------------
+// The playground imports these modules straight into the browser, so they must
+// not reference Node-only globals. Guards against regressions like the Wasm
+// backend reaching for `Buffer` (which Node has but a browser does not).
+{
+  const BROWSER_SAFE = ["lexer", "parser", "check", "types", "codegen", "wasm", "format"];
+  const FORBIDDEN = /\bBuffer\b|\bnode:|\brequire\s*\(|\b__dirname\b|\b__filename\b/;
+  const offenders = [];
+  for (const m of BROWSER_SAFE) {
+    const src = readFileSync(resolve(ROOT, "src", `${m}.js`), "utf8");
+    const code = src.split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+    const hit = FORBIDDEN.exec(code);
+    if (hit) offenders.push(`${m}.js → ${hit[0]}`);
+  }
+  if (offenders.length === 0) ok("browser-safety: playground modules use no Node-only globals");
+  else bad("browser-safety", `offenders: ${offenders.join(", ")}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

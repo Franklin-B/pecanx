@@ -1,0 +1,74 @@
+{
+  "Module header": {
+    "prefix": "module",
+    "body": ["module ${1:My.Module}", "", "$0"],
+    "description": "A module header"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": ["fn ${1:name}(${2:arg}: ${3:Type}): ${4:Ret} =", "  $0"],
+    "description": "A pure function"
+  },
+  "Parse (smart constructor)": {
+    "prefix": "parse",
+    "body": [
+      "parse ${1:name}(${2:raw}: ${3:String}): Result<${4:Error}, ${5:T}> =",
+      "  $0"
+    ],
+    "description": "A parse function returning a Result"
+  },
+  "Server function": {
+    "prefix": "serverfn",
+    "body": ["server fn ${1:name}(${2:arg}: ${3:Type}): Result<${4:Error}, ${5:Ok}> =", "  $0"],
+    "description": "A server-only function"
+  },
+  "Sum type": {
+    "prefix": "type",
+    "body": ["type ${1:Name} =", "  ${2:VariantA}", "  | ${3:VariantB}$0"],
+    "description": "A sum type"
+  },
+  "Record type": {
+    "prefix": "record",
+    "body": ["type ${1:Name} = {", "  ${2:field}: ${3:Type},$0", "}"],
+    "description": "A record type"
+  },
+  "Opaque type": {
+    "prefix": "opaque",
+    "body": ["opaque ${1:Name}", "$0"],
+    "description": "An opaque type"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": ["match ${1:value} {", "  ${2:Pattern} -> $0", "}"],
+    "description": "A match expression"
+  },
+  "Let binding": {
+    "prefix": "let",
+    "body": ["let ${1:name} = ${2:value}"],
+    "description": "A let binding"
+  },
+  "Elm-style app skeleton": {
+    "prefix": "app",
+    "body": [
+      "module ${1:Main}",
+      "",
+      "type Model = { ${2:count}: Int }",
+      "type Msg = ${3:Increment}",
+      "",
+      "fn init(): (Model, Cmd<Msg>) = ({ ${2:count}: 0 }, Cmd.none)",
+      "",
+      "fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =",
+      "  match msg {",
+      "    ${3:Increment} -> ({ model | ${2:count}: model.${2:count} + 1 }, Cmd.none)",
+      "  }",
+      "",
+      "fn view(model: Model): Html<Msg> =",
+      "  Html.div([], [",
+      "    Html.button([Event.onClick(${3:Increment})], [Html.text(\"+\")]),",
+      "    Html.span([], [Html.text(Int.toString(model.${2:count}))])",
+      "  ])",
+      "$0"
+    ],
+    "description": "A minimal Model/Msg/update/view app"
+  }
+}

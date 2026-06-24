@@ -14,7 +14,7 @@ node pcx.js build ../examples/counter/Main.px --target dom  # → self-contained
 node pcx.js fmt   examples/math.px                         # format source
 node pcx.js dev   ../examples/counter/Main.px              # dev server (http://localhost:8080)
 node orchard.js   add http --registry ./reg                # install a package
-node tests/run.js                                          # run the test suite (36 cases)
+node tests/run.js                                          # run the test suite (37 cases)
 ```
 
 ## What it does today
@@ -142,11 +142,12 @@ headlessly, while `Program.mount` drives it against a real DOM.
 
 ## Tests
 
-`node tests/run.js` runs 36 end-to-end cases covering: exact-output programs and
+`node tests/run.js` runs 37 end-to-end cases covering: exact-output programs and
 the Demo apps; exhaustiveness (accept + PX0001 reject); whole-program type
 inference (accept incl. multi-module, reject incl. a cross-module mismatch);
 **WebAssembly** modules for integers, **Float + records**, **sum types**, and
 **strings**, instantiated and called in Node; the **VDOM-diffing real-DOM** runtime
 (events, async, node identity, and **keyed reconciliation**) under a DOM shim;
-`fmt` idempotence; `lsp` publishing diagnostics over stdio; the `dev` server; and
-`orchard` installing a package that `pcx` then links.
+`fmt` idempotence; `lsp` publishing diagnostics over stdio; the `dev` server;
+`orchard` installing a package that `pcx` then links; and a **browser-safety**
+guard ensuring the playground-imported modules use no Node-only globals.

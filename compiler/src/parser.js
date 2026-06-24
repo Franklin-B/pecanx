@@ -54,11 +54,11 @@ class Parser {
     if (this.isKw("module")) return this.parseModule();
     if (this.isKw("import")) return this.parseImport();
     if (this.isKw("type")) return this.parseTypeDecl();
-    if (this.isKw("opaque")) { this.next(); const name = this.eat("ident").value; return { kind: "Opaque", name }; }
+    if (this.isKw("opaque")) { this.next(); const t = this.eat("ident"); return { kind: "Opaque", name: t.value, line: t.line, col: t.col }; }
     if (this.isKw("parse")) { this.next(); return this.parseFnLike({ isParse: true, annotations }); }
     if (this.isKw("fn")) { this.next(); return this.parseFnLike({ annotations }); }
     if (this.isKw("server")) { this.next(); this.eat("kw", "fn"); return this.parseFnLike({ isServer: true, annotations }); }
-    if (this.isKw("let")) { this.next(); const name = this.eat("ident").value; let type = null; if (this.isOp(":")) { this.next(); type = this.parseType(); } this.eat("op", "="); const expr = this.parseExpr(); return { kind: "Let", name, expr, type }; }
+    if (this.isKw("let")) { this.next(); const t = this.eat("ident"); let type = null; if (this.isOp(":")) { this.next(); type = this.parseType(); } this.eat("op", "="); const expr = this.parseExpr(); return { kind: "Let", name: t.value, expr, type, line: t.line, col: t.col }; }
 
     const t = this.peek();
     throw new ParseError(`Unexpected ${t.type} ${JSON.stringify(t.value)} at top level (${t.line}:${t.col})`);
@@ -116,18 +116,19 @@ class Parser {
     this.eat("kw", "type");
     if (this.isKw("alias")) {
       this.next();
-      const name = this.eat("ident").value;
+      const t = this.eat("ident");
       const params = this.parseTypeParams();
       this.eat("op", "=");
       const type = this.parseType();
-      return { kind: "TypeAlias", name, params, type };
+      return { kind: "TypeAlias", name: t.value, params, type, line: t.line, col: t.col };
     }
-    const name = this.eat("ident").value;
+    const nameTok = this.eat("ident");
+    const name = nameTok.value;
     const params = this.parseTypeParams();
     this.eat("op", "=");
     if (this.isOp("{")) {
       const fields = this.parseRecordType();
-      return { kind: "TypeRecord", name, params, fields };
+      return { kind: "TypeRecord", name, params, fields, line: nameTok.line, col: nameTok.col };
     }
     // sum type
     const variants = [];
@@ -150,7 +151,7 @@ class Parser {
       }
       variants.push({ name: vname, arity: fields.length, fields, fieldTypes });
     } while (this.isOp("|") && this.next());
-    return { kind: "TypeSum", name, params, variants };
+    return { kind: "TypeSum", name, params, variants, line: nameTok.line, col: nameTok.col };
   }
 
   parseRecordType() {
@@ -205,7 +206,8 @@ class Parser {
   }
 
   parseFnLike({ isParse = false, isServer = false, annotations = [] } = {}) {
-    const name = this.eat("ident").value;
+    const nameTok = this.eat("ident");
+    const name = nameTok.value;
     const ps = this.parseParams();
     let retType = null;
     if (this.isOp(":")) { this.next(); retType = this.parseType(); }
@@ -216,6 +218,7 @@ class Parser {
       params: ps.map((p) => p.name),
       paramTypes: ps.map((p) => p.type),
       retType, body, isParse, isServer, annotations,
+      line: nameTok.line, col: nameTok.col,
     };
   }
 
@@ -315,7 +318,7 @@ class Parser {
         this.next();
         e = { kind: "Field", obj: e, name: tk.value };
       }
-      else if (this.isOp("?")) { this.next(); e = { kind: "Try", expr: e }; }
+      else if (this.isOp("?")) { const q = this.next(); e = { kind: "Try", expr: e, line: q.line, col: q.col }; }
       else break;
     }
     return e;
@@ -453,7 +456,7 @@ class Parser {
   }
 
   parseMatch() {
-    this.eat("kw", "match");
+    const kw = this.eat("kw", "match");
     const scrutinee = this.parseExpr();
     this.eat("op", "{");
     const arms = [];
@@ -466,7 +469,7 @@ class Parser {
       arms.push({ pattern, guard, body });
     }
     this.eat("op", "}");
-    return { kind: "Match", scrutinee, arms };
+    return { kind: "Match", scrutinee, arms, line: kw.line, col: kw.col };
   }
 
   // ---- patterns -------------------------------------------------------------

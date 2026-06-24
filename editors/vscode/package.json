@@ -1,0 +1,99 @@
+{
+  "name": "pecanx",
+  "displayName": "PecanX",
+  "description": "PecanX language support: live type/exhaustiveness diagnostics (via pcx lsp), syntax highlighting, and Run / Build (JS·Wasm·DOM) / Format / Dev-server commands.",
+  "version": "0.3.0",
+  "publisher": "pecanx",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages", "Linters", "Formatters"],
+  "keywords": ["pecanx", "pcx", "px", "wasm", "functional"],
+  "main": "./src/extension.js",
+  "activationEvents": ["workspaceContains:**/*.px"],
+  "repository": { "type": "git", "url": "https://github.com/pecanx/pecanx" },
+  "contributes": {
+    "languages": [
+      {
+        "id": "pecanx",
+        "aliases": ["PecanX", "pecanx", "px"],
+        "extensions": [".px"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "pecanx",
+        "scopeName": "source.pecanx",
+        "path": "./syntaxes/pecanx.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      { "language": "pecanx", "path": "./snippets/pecanx.json" }
+    ],
+    "commands": [
+      { "command": "pecanx.run", "title": "Run", "category": "PecanX", "icon": "$(play)" },
+      { "command": "pecanx.buildJs", "title": "Build → JavaScript", "category": "PecanX" },
+      { "command": "pecanx.buildWasm", "title": "Build → WebAssembly", "category": "PecanX" },
+      { "command": "pecanx.buildDom", "title": "Build → DOM (HTML)", "category": "PecanX", "icon": "$(browser)" },
+      { "command": "pecanx.check", "title": "Check", "category": "PecanX" },
+      { "command": "pecanx.checkTypes", "title": "Check (with types)", "category": "PecanX", "icon": "$(check)" },
+      { "command": "pecanx.dev", "title": "Start Dev Server", "category": "PecanX", "icon": "$(server-environment)" },
+      { "command": "pecanx.format", "title": "Format Document", "category": "PecanX" },
+      { "command": "pecanx.restartServer", "title": "Restart Language Server", "category": "PecanX" }
+    ],
+    "menus": {
+      "editor/title/run": [
+        { "command": "pecanx.run", "when": "resourceLangId == pecanx", "group": "1_run@1" },
+        { "command": "pecanx.buildDom", "when": "resourceLangId == pecanx", "group": "1_run@2" }
+      ],
+      "editor/context": [
+        { "command": "pecanx.run", "when": "editorLangId == pecanx", "group": "pecanx@1" },
+        { "command": "pecanx.checkTypes", "when": "editorLangId == pecanx", "group": "pecanx@2" },
+        { "command": "pecanx.buildDom", "when": "editorLangId == pecanx", "group": "pecanx@3" }
+      ],
+      "commandPalette": [
+        { "command": "pecanx.run", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.buildJs", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.buildWasm", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.buildDom", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.check", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.checkTypes", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.dev", "when": "resourceLangId == pecanx" },
+        { "command": "pecanx.format", "when": "resourceLangId == pecanx" }
+      ]
+    },
+    "configuration": {
+      "title": "PecanX",
+      "properties": {
+        "pecanx.compilerPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Absolute path to the PecanX compiler entry (`pcx.js`) or to a `pcx` executable on disk. Leave empty to auto-detect: the extension searches upward from the open file for `compiler/pcx.js`, then falls back to `pcx` on your `PATH`."
+        },
+        "pecanx.nodePath": {
+          "type": "string",
+          "default": "node",
+          "description": "Node.js executable used to run pcx.js (the compiler and the language server). Change this if `node` is not on your PATH."
+        },
+        "pecanx.server.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the pcx language server for live diagnostics, hover, and outline."
+        },
+        "pecanx.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace the communication between VS Code and the pcx language server."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.0",
+    "@types/vscode": "^1.75.0"
+  }
+}

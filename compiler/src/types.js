@@ -105,7 +105,7 @@ export function inferTypes(program) {
       if (d.kind === "Fn") inferFn(d, env, ctx);
       else if (d.kind === "Let") { const t = infer(d.expr, env, ctx); unify(t, instantiate(env.get(d.name))); if (d.type) unify(t, fromAnn(d.type, new Map(), ctx)); }
     } catch (e) {
-      if (e instanceof TypeErr) diags.push({ severity: "error", code: "PX0200", message: `in ${declName(d)}: ${e.message}` });
+      if (e instanceof TypeErr) diags.push({ severity: "error", code: "PX0200", message: `in ${declName(d)}: ${e.message}`, line: d.line, col: d.col });
       else throw e;
     }
   }
@@ -160,7 +160,7 @@ export function inferTypesLinked(modules) {
       if (d.kind === "Fn") inferFn(d, env, ctx);
       else if (d.kind === "Let") { const t = infer(d.expr, env, ctx); unify(t, instantiate(env.get(d.name))); if (d.type) unify(t, fromAnn(d.type, new Map(), ctx)); }
     } catch (e) {
-      if (e instanceof TypeErr) diags.push({ severity: "error", code: "PX0200", file: m.file, message: `${m.name}.${declName(d)}: ${e.message}` });
+      if (e instanceof TypeErr) diags.push({ severity: "error", code: "PX0200", file: m.file, message: `${m.name}.${declName(d)}: ${e.message}`, line: d.line, col: d.col });
       else throw e;
     }
   }

@@ -262,7 +262,7 @@ function enc(e, ctx, out) {
     case "StrInterp": {
       const text = e.parts.map((p) => (p.kind === "str" ? p.value : "")).join("");
       const offset = ctx.recCtx.strings.length;
-      for (const b of Buffer.from(text, "utf8")) ctx.recCtx.strings.push(b);
+      for (const b of utf8Bytes(text)) ctx.recCtx.strings.push(b);
       out.push(0x41, ...sleb(offset), 0x41, ...sleb(text.length), 0xfb, 0x09, ...uleb(ctx.strIndex), ...uleb(0)); // array.new_data $str 0
       return { str: true };
     }
@@ -327,9 +327,13 @@ function binOp(op, wt) {
 }
 
 // ---- binary helpers ---------------------------------------------------------
+// UTF-8 encoding via TextEncoder, which exists in both Node and browsers (so the
+// Wasm backend runs unchanged in the playground; `Buffer` would not).
+const UTF8 = new TextEncoder();
+function utf8Bytes(s) { return UTF8.encode(s); }
 function uleb(n) { const out = []; do { let b = n & 0x7f; n = Math.floor(n / 128); if (n > 0) b |= 0x80; out.push(b); } while (n > 0); return out; }
 function sleb(v) { v |= 0; const out = []; for (;;) { let b = v & 0x7f; v >>= 7; if ((v === 0 && (b & 0x40) === 0) || (v === -1 && (b & 0x40) !== 0)) { out.push(b); break; } out.push(b | 0x80); } return out; }
 function f64bytes(x) { const buf = new ArrayBuffer(8); new DataView(buf).setFloat64(0, x, true); return [...new Uint8Array(buf)]; }
 function vec(items) { const flat = []; for (const it of items) for (const b of it) flat.push(b); return [...uleb(items.length), ...flat]; }
 function section(id, contents) { return [id, ...uleb(contents.length), ...contents]; }
-function name(str) { const b = [...Buffer.from(str, "utf8")]; return [...uleb(b.length), ...b]; }
+function name(str) { const b = [...utf8Bytes(str)]; return [...uleb(b.length), ...b]; }

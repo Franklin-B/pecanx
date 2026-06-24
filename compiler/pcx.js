@@ -77,7 +77,7 @@ function main() {
   // Static checks across every reachable module.
   const wantTypes = rest.includes("--types");
   let errors = 0;
-  const report = (file, d) => { console.error(`${file}: ${d.severity} [${d.code}] ${d.message}`); if (d.severity === "error") errors++; };
+  const report = (file, d) => { const at = d.line ? `:${d.line}:${d.col || 1}` : ""; console.error(`${file}${at}: ${d.severity} [${d.code}] ${d.message}`); if (d.severity === "error") errors++; };
   for (const mod of ordered) for (const d of check(mod.program)) report(mod.file, d);
   if (wantTypes) for (const d of inferTypesLinked(ordered)) report(d.file, d);
 

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PecanX Playground</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">◗</span>
+        <span class="name">PecanX</span>
+        <span class="sub">playground</span>
+        <span id="target-badge" class="badge" title="Detected build target">—</span>
+      </div>
+      <div class="actions">
+        <select id="examples" class="select" title="Load an example" aria-label="Examples">
+          <option value="">Examples…</option>
+        </select>
+        <select id="target" class="select" title="Build target" aria-label="Target">
+          <option value="auto">Auto</option>
+          <option value="js">Run (JS)</option>
+          <option value="dom">DOM app</option>
+          <option value="wasm">WebAssembly</option>
+        </select>
+        <button id="btn-format" class="btn" title="Format (Shift+Alt+F)">Format</button>
+        <button id="btn-share" class="btn" title="Copy a shareable link">Share</button>
+        <button id="btn-run" class="btn btn-primary" title="Run (Ctrl/Cmd+Enter)">▶ Run</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="editor-pane" id="editor-pane">
+        <div class="editor" id="editor">
+          <div class="gutter" id="gutter" aria-hidden="true"></div>
+          <div class="code-area" id="code-area">
+            <pre class="highlight" id="highlight" aria-hidden="true"><code></code></pre>
+            <div class="squiggles" id="squiggles" aria-hidden="true"></div>
+            <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off"
+              autocorrect="off" wrap="off" aria-label="PecanX source"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <div class="divider" id="divider" role="separator" aria-orientation="vertical"></div>
+
+      <section class="result-pane">
+        <nav class="tabs" id="tabs">
+          <button class="tab active" data-tab="preview">Preview</button>
+          <button class="tab" data-tab="console">Console</button>
+          <button class="tab" data-tab="js">JS</button>
+          <button class="tab" data-tab="wasm">Wasm</button>
+          <button class="tab" data-tab="problems">Problems <span id="problem-count" class="count"></span></button>
+        </nav>
+        <div class="panels">
+          <div class="panel active" data-panel="preview">
+            <div id="preview-empty" class="empty">Run a DOM app (one with <code>init</code>/<code>update</code>/<code>view</code>) to see it live here.</div>
+            <iframe id="preview-frame" title="Preview" sandbox="allow-scripts"></iframe>
+          </div>
+          <div class="panel" data-panel="console">
+            <div id="console-out" class="console"></div>
+          </div>
+          <div class="panel" data-panel="js">
+            <pre id="js-out" class="codeout"><code>// Compiled JavaScript appears here.</code></pre>
+          </div>
+          <div class="panel" data-panel="wasm">
+            <div id="wasm-out" class="wasm">Select the <b>WebAssembly</b> target (or use a pure-numeric program) and Run to compile a real <code>.wasm</code>.</div>
+          </div>
+          <div class="panel" data-panel="problems">
+            <div id="problems-out" class="problems"><div class="empty">No problems.</div></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar" id="statusbar">
+      <span id="status-diag" class="status-ok">ready</span>
+      <span class="status-spacer"></span>
+      <span id="status-pos" class="status-muted">Ln 1, Col 1</span>
+      <span class="status-muted">PecanX v0.3 · pcx in your browser</span>
+    </footer>
+
+    <script type="module" src="playground.js"></script>
+  </body>
+</html>
