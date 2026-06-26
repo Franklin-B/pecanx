@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// orchard — the PecanX package manager (v0.3, local file-based registry).
+// orchard — the PecanX package manager (v0.4, local file-based registry).
 //
 //   orchard add <name> [--registry <dir>] [--path <dir>] [--manifest <file>]
 //   orchard install [--registry <dir>]      resolve every dependency in pecanx.toml
@@ -89,7 +89,7 @@ switch (cmd) {
   case "install": installAll(); break;
   case "list": list(); break;
   default:
-    console.log(`orchard — the PecanX package manager (v0.3)
+    console.log(`orchard — the PecanX package manager (v0.4)
 
 usage:
   orchard add <name> [--registry <dir>] [--path <dir>]   install a package + record it

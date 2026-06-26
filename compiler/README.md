@@ -1,4 +1,4 @@
-# pcx — the PecanX compiler (v0.3)
+# pcx — the PecanX compiler (v0.4)
 
 A real, working compiler for a useful subset of PecanX. It lexes, parses, checks
 (`match` exhaustiveness + optional Hindley-Milner type inference), links modules,
@@ -7,14 +7,16 @@ it. Written in plain JavaScript with **zero dependencies** — runs on any Node 
 
 ```bash
 # from this directory:
+node pcx.js new   myapp                                    # scaffold a project (app + tests)
 node pcx.js run   examples/signup_demo.px                  # compile + execute
+node pcx.js test  examples/kit                             # run test… functions
 node pcx.js check --types examples/types/ok.px             # exhaustiveness + type inference
 node pcx.js build examples/sumtypes.px --target wasm -o s.wasm  # → real WebAssembly (WasmGC)
 node pcx.js build ../examples/counter/Main.px --target dom  # → self-contained HTML app
 node pcx.js fmt   examples/math.px                         # format source
 node pcx.js dev   ../examples/counter/Main.px              # dev server (http://localhost:8080)
 node orchard.js   add http --registry ./reg                # install a package
-node tests/run.js                                          # run the test suite (37 cases)
+node tests/run.js                                          # run the test suite (45 cases)
 ```
 
 ## What it does today
@@ -95,19 +97,20 @@ entry.px ─▶ resolve modules ─▶ lexer ─▶ parser ─▶ checker ─▶
 | [`src/wasm.js`](src/wasm.js) | AST → WebAssembly binary (hand-emitted, no assembler). Type-directed: `Int`→i32, `Float`→f64, **records, sum types, and strings → WasmGC** (structs, tagged structs, `array<i8>`). |
 | [`src/runtime.js`](src/runtime.js) | Standard library, constructors, **and the effect runtime** — `Html` renderer (string + **VDOM-diffing** real DOM with **keyed** reconciliation), `Cmd`, async `Http`/`Time`, `Server`/`Db`, `Program.run` (headless) and `Program.mount` (DOM). |
 | [`src/format.js`](src/format.js) | `pcx fmt`: precedence-aware AST pretty-printer (idempotent, re-parseable). |
-| [`src/lsp.js`](src/lsp.js) | `pcx lsp`: Language Server over stdio — publishes diagnostics from `check` + inference. |
+| [`src/lsp.js`](src/lsp.js) | `pcx lsp`: Language Server over stdio — diagnostics (from `check` + inference), hover, document outline, **completion**, **go-to-definition**, and **formatting**. |
 | [`src/dev.js`](src/dev.js) | `pcx dev`: build-on-request development server for the real-DOM target. |
-| [`pcx.js`](pcx.js) | CLI: `check [--types]` / `build [--target js\|wasm\|dom]` / `run` / `fmt` / `lsp` / `dev`. |
+| [`pcx.js`](pcx.js) | CLI: `new` / `check [--types]` / `build [--target js\|wasm\|dom]` / `run` / `test` / `fmt` / `lsp` / `dev`. |
 | [`orchard.js`](orchard.js) | `orchard` package manager: local file registry → `orchard_modules/` (auto-linked by `pcx`). |
 
-## Supported language (v0.3)
+## Supported language (v0.4)
 
 **Multi-module linking** (`import` resolved across sibling files by each file's
 `module` header), `fn` / `let` / `type` / `type alias` / `opaque` / `parse` /
 `server fn`; records (construct/access/update/punning), sum types (positional
 **and** named-field construction), tuples, lists (incl. `[x, ...rest]`); `match`
 with constructor/tuple/list/record/literal/wildcard/var patterns and guards;
-`if/then/else`; lambdas; `effect { let! ... }` blocks; the operators
+`if/then/else`; lambdas; the **`?` operator** (early-return for `Result`/`Option`);
+`effect { let! ... }` blocks; the operators
 `+ - * / % == /= < <= > >= and or not ++ |>`; string interpolation; a standard
 library (`String`, `Int`, `Float`, `List`, `Option`, `Result`, `Char`, `Console`,
 `Dict`); and a **headless effect runtime** — `Html` renders to a string, and
@@ -126,28 +129,29 @@ headlessly, while `Program.mount` drives it against a real DOM.
   performs async `Cmd`s (`Http` via `fetch`, `Time` via `setTimeout`).
 - **Exhaustiveness** (`check`) and **whole-program type inference** (`check --types`,
   catches cross-module errors).
-- **Tooling** — `fmt` (formatter), `lsp` (language server), `dev` (dev server), and
-  `orchard` (package manager).
+- **Tooling** — `new` (scaffolder), `test` (test runner), `fmt` (formatter), `lsp`
+  (language server), `dev` (dev server), and `orchard` (package manager).
 
 ## Not yet implemented (see ../docs/appendix-b-reference.md · B.6)
 
 - **Wasm closures / function values** — `Int`/`Float`/records/sum-types/strings
   compile to WasmGC; first-class functions need closure-conversion + `call_ref`, so
-  functions that take function parameters stay on the JS backend.
-- **The `?` operator** — parsed and flagged (PX0100); not yet lowered.
+  functions that take function parameters (or use `?`) stay on the JS backend.
 - **A networked Orchard registry** — the package manager is local/file-based today
   (no version solving, lockfiles, or remote registry).
-- **Richer LSP** — diagnostics work; hover, completion, go-to-definition, and
-  precise semantic ranges are future work.
+- **Rename refactoring in the LSP** — diagnostics, hover, outline, completion,
+  go-to-definition, and formatting ship; workspace-wide rename is future work.
 
 ## Tests
 
-`node tests/run.js` runs 37 end-to-end cases covering: exact-output programs and
-the Demo apps; exhaustiveness (accept + PX0001 reject); whole-program type
-inference (accept incl. multi-module, reject incl. a cross-module mismatch);
-**WebAssembly** modules for integers, **Float + records**, **sum types**, and
-**strings**, instantiated and called in Node; the **VDOM-diffing real-DOM** runtime
-(events, async, node identity, and **keyed reconciliation**) under a DOM shim;
-`fmt` idempotence; `lsp` publishing diagnostics over stdio; the `dev` server;
-`orchard` installing a package that `pcx` then links; and a **browser-safety**
-guard ensuring the playground-imported modules use no Node-only globals.
+`node tests/run.js` runs 45 end-to-end cases covering: exact-output programs and
+the Demo apps; the **`?` operator** (`Result`/`Option`, plus a PX0101 reject);
+exhaustiveness (accept + PX0001 reject); whole-program type inference (accept incl.
+multi-module, reject incl. a cross-module mismatch); **WebAssembly** modules for
+integers, **Float + records**, **sum types**, and **strings**, instantiated and
+called in Node; the **VDOM-diffing real-DOM** runtime (events, async, node identity,
+and **keyed reconciliation**) under a DOM shim; `pcx test` (pass + a failing-suite
+non-zero exit); `pcx new` (scaffold that runs, tests, type-checks, and builds);
+`fmt` idempotence; `lsp` diagnostics, completion, definition, and formatting over
+stdio; the `dev` server; `orchard` installing a package that `pcx` then links; and a
+**browser-safety** guard ensuring the playground-imported modules use no Node-only globals.

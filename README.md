@@ -118,30 +118,35 @@ Complete example apps for dissemination live in [`examples/`](examples/README.md
 
 ## Status
 
-PecanX is a **language design with a working compiler and a runnable reference app.**
+PecanX is a **language design with a working compiler, a deployable web IDE, and a runnable reference app.**
 
-- **`pcx` v0.3** — a real, zero-dependency compiler in [`compiler/`](compiler): it
+- **`pcx` v0.4** — a real, zero-dependency compiler in [`compiler/`](compiler): it
   lexes, parses, checks `match` exhaustiveness, **infers and checks types
   whole-program** (Hindley-Milner, `--types`, including cross-module errors),
-  **links multiple modules**, and compiles to **JavaScript**, **WebAssembly**
+  lowers the **`?` operator** (early-return for `Result`/`Option`), **links
+  multiple modules**, and compiles to **JavaScript**, **WebAssembly**
   (`Int`/`Float`/**records**/**sum types**/**strings** via WasmGC — real `.wasm`),
   or a **real-DOM browser app** (`--target dom`) with **virtual-DOM diffing** and
-  **keyed reconciliation**. It also ships a formatter (`fmt`), a language server
-  (`lsp`) — diagnostics with precise ranges, hover, and document outline — a dev
-  server (`dev`), and **Orchard** (`orchard`) — a local package manager. The
-  [counter](examples/counter), [todo](examples/todo), and
+  **keyed reconciliation**. It also ships **`pcx new`** (project scaffolder),
+  **`pcx test`** (a unit-test runner), a formatter (`fmt`), a language server
+  (`lsp`) — diagnostics, hover, outline, **completion**, **go-to-definition**, and
+  **formatting** — a dev server (`dev`), and **Orchard** (`orchard`) — a local
+  package manager. The [counter](examples/counter), [todo](examples/todo), and
   [remote-users](examples/remote-users) apps each run via a `Demo.px` driver. Its
-  test suite is 37 end-to-end cases.
-- **A VS Code extension** ([editors/vscode](editors/vscode)) and a **browser
-  playground** ([playground](playground)) — two write-and-compile surfaces built
-  on the compiler above; see *Write and compile it*, below.
+  test suite is 45 end-to-end cases.
+- **A browser playground** ([playground](playground)) — the full `pcx` compiler as
+  a polished, **statically-deployable** web IDE (light/dark, persistence, sharable
+  links, live DOM preview, Wasm download). Build it with `npm run build` → `dist/`
+  and deploy anywhere (Vercel / Netlify / GitHub Pages configs included).
+- **A VS Code extension** ([editors/vscode](editors/vscode)) — live diagnostics,
+  hover, outline, completion, and go-to-definition over `pcx lsp`; see *Write and
+  compile it*, below.
 - **`pecanx-signup`** — the TypeScript + Zod reference app demonstrating isomorphic
   validation on a production stack ([examples/pecanx-signup](examples/pecanx-signup)).
 
-Still ahead: Wasm closures / first-class functions, the `?` operator, a networked
-Orchard registry, and deeper LSP features (go-to-definition, rename) — see
-[Appendix B · Roadmap](docs/appendix-b-reference.md). These docs describe the
-language as designed; forward-looking parts are marked.
+Still ahead: Wasm closures / first-class functions, a networked Orchard registry,
+and rename refactoring — see [Appendix B · Roadmap](docs/appendix-b-reference.md).
+These docs describe the language as designed; forward-looking parts are marked.
 
 ## Write and compile it
 
@@ -156,4 +161,6 @@ Two ways to write PecanX and compile it in one place, both built directly on `pc
   entirely client-side (it's pure, zero-dependency JS): type PecanX, hit **Run**,
   and see live diagnostics, a mounted DOM app, console output, the generated JS, or
   a real downloadable `.wasm` — no install. `node playground/serve.mjs`, then open
-  <http://localhost:5173/playground/>.
+  <http://localhost:5173/playground/>. To ship it, `npm run build` assembles a
+  self-contained static site in `dist/` (deployable to any static host — see
+  [playground/README.md](playground/README.md)).

@@ -1,4 +1,4 @@
-// PecanX parser (pcx v0.3). Recursive descent + precedence climbing.
+// PecanX parser (pcx v0.4). Recursive descent + precedence climbing.
 
 import { lex } from "./lexer.js";
 

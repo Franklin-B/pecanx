@@ -8,18 +8,20 @@ the drawing board.
 A note on status before we begin. PecanX is a *designed* language. The grammar,
 the type system, and the standard library described throughout this manual are
 fixed and authoritative — they are the contract. The **toolchain** is now largely
-built: a working compiler, **`pcx` v0.3**, lives in [`../compiler`](../compiler).
+built: a working compiler, **`pcx` v0.4**, lives in [`../compiler`](../compiler).
 It lexes, parses, checks `match` exhaustiveness, **infers and checks types
-whole-program (Hindley-Milner, `--types`, incl. cross-module errors)**, **links
-multiple modules**, and compiles to **JavaScript, WebAssembly** (`Int`/`Float`/
-records/sum-types/strings via WasmGC), **or a real-DOM browser app** with
-virtual-DOM diffing and keyed reconciliation — plus a formatter (`pcx fmt`), a
-language server (`pcx lsp`), a dev server (`pcx dev`), and the **Orchard** package
-manager (`orchard`, local registry). Try `node pcx.js run examples/signup_demo.px`,
-the `Demo.px` drivers under [`../examples`](../examples), `--target wasm` on
+whole-program (Hindley-Milner, `--types`, incl. cross-module errors)**, lowers the
+**`?` operator**, **links multiple modules**, and compiles to **JavaScript,
+WebAssembly** (`Int`/`Float`/records/sum-types/strings via WasmGC), **or a real-DOM
+browser app** with virtual-DOM diffing and keyed reconciliation — plus a project
+scaffolder (`pcx new`), a test runner (`pcx test`), a formatter (`pcx fmt`), a
+language server (`pcx lsp` — diagnostics, hover, outline, completion, go-to-definition,
+formatting), a dev server (`pcx dev`), and the **Orchard** package manager
+(`orchard`, local registry). Try `node pcx.js run examples/signup_demo.px`, the
+`Demo.px` drivers under [`../examples`](../examples), `--target wasm` on
 `examples/sumtypes.px`, or `--types`. What's *still* pending — Wasm closures /
-first-class functions, the `?` operator, a networked Orchard registry, and richer
-LSP features — is marked **(forward-looking)** where it appears. A second
+first-class functions, a networked Orchard registry, and rename refactoring — is
+marked **(forward-looking)** where it appears. A second
 runnable artifact is the TypeScript + Zod reference app at
 [`../examples/pecanx-signup`](../examples/pecanx-signup), which demonstrates the
 isomorphic-validation idea on a production stack today.
@@ -124,11 +126,10 @@ local-lib = { path = "../local-lib" }      # path dependency, no registry fetch
 
 ---
 
-## B.2 The `pcx` CLI **(implemented in v0.3 — `check [--types]` / `build [--target js|wasm|dom]` / `run` / `fmt` / `lsp` / `dev`)**
+## B.2 The `pcx` CLI **(implemented in v0.4 — `new` / `check [--types]` / `build [--target js|wasm|dom]` / `run` / `test` / `fmt` / `lsp` / `dev`)**
 
-`pcx` is the PecanX compiler and project driver. In v0.3, `check` (with optional
-`--types`), `build` (targets `js` / `wasm` / `dom`), `run`, `fmt`, `lsp`, and
-`dev` are implemented; `new` and `test` below are forward-looking.
+`pcx` is the PecanX compiler and project driver. All eight commands below are
+implemented in v0.4; some of the *flags* are forward-looking (marked).
 
 ```bash
 pcx <command> [options]
@@ -136,24 +137,27 @@ pcx <command> [options]
 
 | Command | Common flags | Behavior |
 | --- | --- | --- |
-| `pcx new <name>` | `--lib`, `--app` (default), `--no-git` | Scaffold a new package: `pecanx.toml`, `src/Main.px` (or `src/<Name>.px` for a lib), and a starter `src/Kernel/`. |
-| `pcx check` | `--watch`, `--target <js\|wasm\|server>` | Type-check and run all diagnostics without emitting code. Fast feedback loop; honours the [diagnostic catalog](#b4-compiler-diagnostic-catalog). |
-| `pcx build` | `--release`, `--target <…>`, `--out <dir>` | Compile to the targets enabled in `[targets]`. `--release` applies the `optimize` profile and strips debug info. |
-| `pcx dev` | `--port <n>`, `--open` | Start the development server with hot reload: re-checks on save, rebuilds the JS bundle and Kernel Wasm, serves the app. |
-| `pcx run` | `--target <js\|server>`, `-- <args>` | Build then execute an executable package (e.g. a server entry). Arguments after `--` are passed through. |
-| `pcx test` | `--filter <pat>`, `--watch` | Discover and run tests (modules/functions under `tests/`). Reports pass/fail counts. |
-| `pcx fmt` | `--check`, `--stdin` | Format `.px` sources to canonical style (2-space indent, the conventions in this manual). `--check` exits non-zero if any file would change. |
-| `pcx lsp` | (stdio) | Run the language server for editor integration. v0.3: diagnostics with precise ranges, hover (keyword/stdlib docs + function signatures), and document outline. Go-to-definition / completion are forward-looking. |
+| `pcx new <name>` | — | Scaffold a runnable project: `pecanx.toml`, a counter `Main.px`, a `MainTest.px` unit-test module, a README, and a `.gitignore`. The layout is flat so `run` / `test` / `dev` / `build` all work immediately. |
+| `pcx check` | `--types`, _`--watch` (forward-looking)_ | Run `match` exhaustiveness diagnostics; `--types` adds whole-program Hindley-Milner inference (incl. cross-module errors). Honours the [diagnostic catalog](#b4-compiler-diagnostic-catalog). |
+| `pcx build` | `--target <js\|wasm\|dom>`, `-o <out>` | Compile + link. `js` → a `.mjs`; `wasm` → a real `.wasm` (the pure core); `dom` → a self-contained HTML app. |
+| `pcx dev` | `-p <port>` | Build-on-request development server for the `dom` target (default port 8080); a `/healthz` probe is served too. |
+| `pcx run` | — | Build, link, and execute the entry module (runs `main()` if present). |
+| `pcx test` | `[path]` | Discover every `.px` under `path` (default: `./tests` if present, else `.`) that declares zero-arg `fn test…(): Bool`, link each with its dependencies, run them, and report pass/fail counts (non-zero exit on failure). |
+| `pcx fmt` | `-w`, _`--check`, `--stdin` (forward-looking)_ | Format `.px` to canonical style (2-space indent). Prints to stdout, or `-w` writes in place. |
+| `pcx lsp` | (stdio) | Run the language server for editor integration: diagnostics with precise ranges, hover (keyword/stdlib docs + function signatures), document outline, completion (stdlib members + local decls), go-to-definition, and formatting. Workspace-wide rename is forward-looking. |
 
 Global flags accepted by every command: `--manifest <path>` (point at a
 non-default `pecanx.toml`), `--quiet`, `--verbose`, `--version`, `--help`.
 
 ---
 
-## B.3 The `orchard` CLI **(implemented in v0.3 — local file registry)**
+## B.3 The `orchard` CLI **(implemented — local file registry; networked registry forward-looking)**
 
-Orchard is the PecanX package registry; `orchard` is its client. It manages the
-`[dependencies]` table and the lockfile. Not yet implemented.
+Orchard is the PecanX package registry; `orchard` is its client. The local
+file-based commands (`orchard add` / `install` / `list`) are implemented and
+populate `orchard_modules/`, which `pcx` auto-links. The networked-registry
+commands below (`publish`, `search`, `login`, with version solving and lockfiles)
+are forward-looking.
 
 ```bash
 orchard <command> [options]
@@ -177,9 +181,9 @@ orchard <command> [options]
 PecanX leans hard on the compiler: the language deliberately removes whole
 classes of failure (no `null`, no exceptions, mandatory exhaustiveness) so that
 mistakes surface as diagnostics rather than runtime surprises. The table below
-lists representative codes and the typical fix. **(`pcx` v0.3 already emits
+lists representative codes and the typical fix. **(`pcx` v0.4 already emits
 `PX0001` — non-exhaustive match — `PX0200` for type errors (`--types`), and
-`PX0100` for the unsupported `?`; the
+`PX0101` for a misplaced `?` (outside any function/lambda body); the
 remaining codes are forward-looking, but each maps directly to a rule stated
 elsewhere in this manual.)**
 
@@ -195,6 +199,7 @@ elsewhere in this manual.)**
 | `PX0008` | A `Foreign` value is used without decoding. | Run it through `Decode.run(decoder)` and `match` the `Result` before use. See [FFI](08-ffi.md). |
 | `PX0009` | Missing `else` branch in `if`. | Provide an `else`; both branches must exist and share a type. See [Syntax Basics](02-syntax-basics.md). |
 | `PX0010` | Unused binding `name`. | Remove it, or prefix with `_` to mark it intentionally unused. |
+| `PX0101` | The `?` operator is outside any function or lambda body (it has nothing to early-return from). | Move the `?` expression into a `fn`/lambda, or `match` the `Result`/`Option` explicitly. See [Errors & Validation](05-errors-and-validation.md). |
 
 ---
 
@@ -221,27 +226,32 @@ This section tracks the gap between the *language contract* (fixed) and the
 *running tooling*. Much of the toolchain now exists (first item); the rest is
 forward-looking.
 
-- **The `pcx` toolchain — shipped (v0.3).** [`../compiler`](../compiler) lexes,
+- **The `pcx` toolchain — shipped (v0.4).** [`../compiler`](../compiler) lexes,
   parses, checks `match` exhaustiveness, **infers and checks types whole-program**
   (Hindley-Milner, `--types`: unbound vars, mismatches, arity, occurs check, **and
-  cross-module errors**), **links multiple modules**, and compiles to **JavaScript**,
+  cross-module errors**), lowers the **`?` operator** (early-return for
+  `Result`/`Option`), **links multiple modules**, and compiles to **JavaScript**,
   **WebAssembly** (real `.wasm` over `Int`, `Float`, **records, sum types, and
   strings** via WasmGC structs / tagged structs / `array<i8>`), or a **real-DOM
   browser app** (`--target dom`) whose runtime **diffs the virtual tree and patches
   in place** with **keyed reconciliation** for reordered lists, wiring events and
   asynchronous `fetch`/`setTimeout` effects via `Program.mount`. It also ships a
+  **project scaffolder** (`pcx new`), a **test runner** (`pcx test`), a
   **formatter** (`pcx fmt`), a **language server** (`pcx lsp` — diagnostics with
-  precise source ranges, hover docs/signatures, and a document outline, over
-  stdio), a **dev server** (`pcx dev`), and **Orchard** (`orchard`), a local
-  file-based package manager that installs into `orchard_modules/` (auto-linked).
-  *Still pending:* Wasm closures / first-class functions (closure-conversion +
-  `call_ref`); the `?` operator's lowering; a networked Orchard registry (version
-  solving, lockfiles); and deeper LSP features (completion, go-to-definition, rename).
+  precise source ranges, hover docs/signatures, document outline, completion,
+  go-to-definition, and formatting, over stdio), a **dev server** (`pcx dev`), and
+  **Orchard** (`orchard`), a local file-based package manager that installs into
+  `orchard_modules/` (auto-linked). *Still pending:* Wasm closures / first-class
+  functions (closure-conversion + `call_ref`); a networked Orchard registry (version
+  solving, lockfiles); and workspace-wide rename in the LSP.
 - **Editor & playground — shipped.** A **VS Code extension**
-  ([`../editors/vscode`](../editors/vscode)) drives `pcx lsp` for live squiggles
-  plus Run / Build (JS·Wasm·DOM) / Format / Dev-server commands, and a **browser
-  playground** ([`../playground`](../playground)) runs the whole compiler
-  client-side (live diagnostics, DOM preview, console, generated JS, real `.wasm`).
+  ([`../editors/vscode`](../editors/vscode)) drives `pcx lsp` for live squiggles,
+  hover, outline, completion, and go-to-definition, plus Run / Build (JS·Wasm·DOM) /
+  Format / Dev-server commands; and a **browser playground**
+  ([`../playground`](../playground)) runs the whole compiler client-side (live
+  diagnostics, DOM preview, console, generated JS, real `.wasm`) — a polished,
+  **statically-deployable** web IDE (`node playground/build.mjs` → `dist/`, with
+  Vercel / Netlify / GitHub Pages configs included).
 - **Algebraic effects.** The current effect model is the Elm-style
   `Cmd<Msg>` / `update` loop (see
   [Effects & Architecture](06-effects-and-architecture.md)). A more general

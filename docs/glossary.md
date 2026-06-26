@@ -104,7 +104,7 @@ The design discipline of turning untrusted input into a precise, trustworthy typ
 
 ### pcx
 
-The PecanX compiler. It performs type checking, infers **[Placement](#placement)**, and emits both JavaScript and the **[WebAssembly (Wasm) target](#webassembly-wasm-target)**. Packages it consumes are managed by **[Orchard](#orchard)**. (A working **v0.3** lives in [`../compiler`](../compiler): it checks `match` exhaustiveness, infers types whole-program via Hindley-Milner (`--types`, including cross-module errors), and compiles a useful subset of PecanX to JavaScript, WebAssembly (`Int`/`Float`/records/sum-types/strings via WasmGC), and a virtual-DOM-diffing real-DOM browser app — plus `fmt`, `lsp`, `dev`, and the Orchard package manager.)
+The PecanX compiler. It performs type checking, infers **[Placement](#placement)**, and emits both JavaScript and the **[WebAssembly (Wasm) target](#webassembly-wasm-target)**. Packages it consumes are managed by **[Orchard](#orchard)**. (A working **v0.4** lives in [`../compiler`](../compiler): it checks `match` exhaustiveness, infers types whole-program via Hindley-Milner (`--types`, including cross-module errors), lowers the `?` operator, and compiles a useful subset of PecanX to JavaScript, WebAssembly (`Int`/`Float`/records/sum-types/strings via WasmGC), and a virtual-DOM-diffing real-DOM browser app — plus `new` (scaffolder), `test` (test runner), `fmt`, `lsp` (diagnostics, hover, outline, completion, go-to-definition, formatting), `dev`, and the Orchard package manager.)
 
 ### Pipeline operator
 

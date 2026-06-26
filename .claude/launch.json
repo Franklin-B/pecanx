@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["playground/serve.mjs"],
       "port": 5173
+    },
+    {
+      "name": "dist",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["playground/serve.mjs", "dist"],
+      "port": 5188
     }
   ]
 }
