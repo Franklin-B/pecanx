@@ -1,8 +1,8 @@
 {
   "name": "pecanx",
   "displayName": "PecanX",
-  "description": "PecanX language support: live type/exhaustiveness diagnostics (via pcx lsp), syntax highlighting, and Run / Build (JS·Wasm·DOM) / Format / Dev-server commands.",
-  "version": "0.3.0",
+  "description": "PecanX language support: live type/exhaustiveness diagnostics, hover, outline, completion, and go-to-definition (via pcx lsp), syntax highlighting, and Run / Build (JS·Wasm·DOM) / Format / Dev-server commands.",
+  "version": "0.4.0",
   "publisher": "pecanx",
   "license": "MIT",
   "engines": { "vscode": "^1.75.0" },

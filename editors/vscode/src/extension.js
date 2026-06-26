@@ -18,6 +18,7 @@ const path = require("node:path");
 let client = null;        // the running LanguageClient, or null
 let terminal = null;      // shared "PecanX" terminal
 let output = null;        // shared output channel for diagnostics-side messages
+let formatterDisposable = null; // the fallback `pcx fmt` formatter, when registered
 
 function log(msg) {
   if (!output) output = vscode.window.createOutputChannel("PecanX");
@@ -211,21 +212,37 @@ function activate(context) {
     vscode.window.setStatusBarMessage("PecanX: language server restarted", 3000);
   });
 
-  context.subscriptions.push(
-    vscode.languages.registerDocumentFormattingEditProvider(
-      [{ scheme: "file", language: "pecanx" }, { scheme: "untitled", language: "pecanx" }],
-      { provideDocumentFormattingEdits: (document) => formatDocument(document) }
-    )
-  );
+  // The language server provides formatting via `textDocument/formatting`, so the
+  // standalone `pcx fmt` formatter is registered only when the server is disabled —
+  // kept in sync below if `server.enabled` changes at runtime.
+  syncFormatter(context);
 
-  // Restart the server when relevant settings change.
+  // Restart the server and reconcile the formatter when relevant settings change.
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("pecanx.compilerPath") || e.affectsConfiguration("pecanx.nodePath") || e.affectsConfiguration("pecanx.server.enabled")) {
         stopServer().then(() => startServer(context));
       }
+      if (e.affectsConfiguration("pecanx.server.enabled")) syncFormatter(context);
     })
   );
+}
+
+// Register the fallback `pcx fmt` formatter iff the language server is disabled
+// (the server provides formatting itself), disposing it otherwise — so VS Code
+// never sees two competing formatters, even as the setting toggles at runtime.
+function syncFormatter(context) {
+  const serverEnabled = vscode.workspace.getConfiguration("pecanx").get("server.enabled");
+  if (serverEnabled) {
+    if (formatterDisposable) { formatterDisposable.dispose(); formatterDisposable = null; }
+    return;
+  }
+  if (formatterDisposable) return; // already registered
+  formatterDisposable = vscode.languages.registerDocumentFormattingEditProvider(
+    [{ scheme: "file", language: "pecanx" }, { scheme: "untitled", language: "pecanx" }],
+    { provideDocumentFormattingEdits: (document) => formatDocument(document) }
+  );
+  context.subscriptions.push(formatterDisposable);
 }
 
 function deactivate() {

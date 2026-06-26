@@ -2,14 +2,17 @@
 //
 // Speaks enough of the protocol to make .px feel like a real language in any
 // LSP-capable editor:
-//   • textDocument/publishDiagnostics — exhaustiveness (PX0001), the `?` guard
-//     (PX0100), and whole-program Hindley-Milner inference (PX0200), each with a
-//     precise source range now that the parser records declaration / match
-//     positions.
+//   • textDocument/publishDiagnostics — exhaustiveness (PX0001), the misplaced-`?`
+//     guard (PX0101), and whole-program Hindley-Milner inference (PX0200), each
+//     with a precise source range.
 //   • textDocument/hover — docs for keywords, stdlib modules, built-in
 //     constructors, and the signature of any top-level function in the file.
 //   • textDocument/documentSymbol — an outline of the file's functions, types,
 //     opaque types, and top-level lets (with sum variants / record fields nested).
+//   • textDocument/completion — stdlib members after `Module.`, plus keywords,
+//     constructors, and local declarations.
+//   • textDocument/definition — jump to a local declaration or sum-type variant.
+//   • textDocument/formatting — canonical-style formatting via format.js.
 //
 // It keeps every open document's text in memory so hover and symbols re-lex /
 // re-parse the live buffer.
@@ -18,10 +21,12 @@ import { lex, LexError } from "./lexer.js";
 import { parse, ParseError } from "./parser.js";
 import { check } from "./check.js";
 import { inferTypesLinked } from "./types.js";
+import { formatProgram } from "./format.js";
 
 // LSP enums we use.
 const Severity = { error: 1, warning: 2, information: 3, hint: 4 };
 const SymbolKind = { Class: 5, Field: 8, Enum: 10, Interface: 11, Function: 12, Constant: 14, EnumMember: 22, Struct: 23 };
+const CompletionKind = { Method: 2, Function: 3, Constructor: 4, Field: 5, Variable: 6, Class: 7, Module: 9, Enum: 10, Keyword: 14, EnumMember: 20, Struct: 22 };
 
 export function startLsp(io = { input: process.stdin, output: process.stdout }) {
   const docs = new Map(); // uri -> text
@@ -52,9 +57,12 @@ export function startLsp(io = { input: process.stdin, output: process.stdout }) 
             textDocumentSync: 1, // full document sync
             hoverProvider: true,
             documentSymbolProvider: true,
+            completionProvider: { triggerCharacters: ["."] },
+            definitionProvider: true,
+            documentFormattingProvider: true,
             diagnosticProvider: { interFileDependencies: false, workspaceDiagnostics: false },
           },
-          serverInfo: { name: "pcx", version: "0.3" },
+          serverInfo: { name: "pcx", version: "0.4" },
         });
       case "initialized": return;
       case "textDocument/didOpen": {
@@ -69,6 +77,9 @@ export function startLsp(io = { input: process.stdin, output: process.stdout }) 
       case "textDocument/didClose": docs.delete(msg.params.textDocument.uri); return;
       case "textDocument/hover": return reply(msg.id, hover(msg.params));
       case "textDocument/documentSymbol": return reply(msg.id, documentSymbols(msg.params));
+      case "textDocument/completion": return reply(msg.id, completion(msg.params));
+      case "textDocument/definition": return reply(msg.id, definition(msg.params));
+      case "textDocument/formatting": return reply(msg.id, formatting(msg.params));
       case "shutdown": return reply(msg.id, null);
       case "exit": process.exit(0);
       default: if (msg.id != null) reply(msg.id, null);
@@ -141,6 +152,70 @@ export function startLsp(io = { input: process.stdin, output: process.stdout }) 
       else if (d.kind === "Let") out.push({ ...base, kind: SymbolKind.Constant, detail: "let" });
     }
     return out;
+  }
+
+  // --- completion ------------------------------------------------------------
+  function completion({ textDocument, position }) {
+    const text = docs.get(textDocument.uri);
+    if (text == null) return { isIncomplete: false, items: [] };
+    const lineSrc = (text.split(/\r?\n/)[position.line] || "").slice(0, position.character);
+
+    // `Module.<partial>` → that module's members.
+    const dot = /([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z0-9_]*)$/.exec(lineSrc);
+    if (dot) {
+      const members = STDLIB_MEMBERS[dot[1]];
+      if (members) {
+        const part = dot[2];
+        return { isIncomplete: false, items: members.filter((m) => m.startsWith(part)).map((m) => ({ label: m, kind: CompletionKind.Function, detail: `${dot[1]}.${m}` })) };
+      }
+      return { isIncomplete: false, items: [] };
+    }
+
+    // bare prefix → keywords, stdlib modules, constructors, and local decls.
+    const word = (/([A-Za-z_][A-Za-z0-9_]*)$/.exec(lineSrc) || [, ""])[1];
+    const items = [];
+    for (const k of KEYWORDS) items.push({ label: k, kind: CompletionKind.Keyword });
+    for (const m of Object.keys(STDLIB_MEMBERS)) items.push({ label: m, kind: CompletionKind.Module, detail: "stdlib module" });
+    for (const c of Object.keys(CTOR_DOC)) items.push({ label: c, kind: CompletionKind.Constructor, detail: "constructor" });
+    let program; try { program = parse(lex(text)); } catch { program = null; }
+    if (program) for (const d of program.decls) {
+      if (d.kind === "Fn") items.push({ label: d.name, kind: CompletionKind.Function, detail: fnSignature(d).replace(/\s*=$/, "") });
+      else if (d.kind === "TypeRecord") items.push({ label: d.name, kind: CompletionKind.Struct, detail: "record" });
+      else if (d.kind === "TypeAlias") items.push({ label: d.name, kind: CompletionKind.Class, detail: "type alias" });
+      else if (d.kind === "Opaque") items.push({ label: d.name, kind: CompletionKind.Class, detail: "opaque type" });
+      else if (d.kind === "Let") items.push({ label: d.name, kind: CompletionKind.Variable, detail: "let" });
+      else if (d.kind === "TypeSum") { items.push({ label: d.name, kind: CompletionKind.Enum, detail: "sum type" }); for (const v of d.variants) items.push({ label: v.name, kind: CompletionKind.EnumMember, detail: `${d.name} variant` }); }
+    }
+    const seen = new Set();
+    const filtered = items.filter((it) => (!word || it.label.startsWith(word)) && !seen.has(it.label + it.kind) && seen.add(it.label + it.kind));
+    return { isIncomplete: false, items: filtered };
+  }
+
+  // --- go-to-definition ------------------------------------------------------
+  function definition({ textDocument, position }) {
+    const text = docs.get(textDocument.uri);
+    if (text == null) return null;
+    const w = wordAt(text, position.line, position.character);
+    if (!w) return null;
+    let program; try { program = parse(lex(text)); } catch { return null; }
+    for (const d of program.decls) {
+      if (d.line == null) continue;
+      const matchesDecl = (d.kind === "Fn" || d.kind === "TypeRecord" || d.kind === "TypeAlias" || d.kind === "TypeSum" || d.kind === "Opaque" || d.kind === "Let") && d.name === w.text;
+      const variant = d.kind === "TypeSum" && d.variants.some((v) => v.name === w.text);
+      if (matchesDecl || variant) return { uri: textDocument.uri, range: rangeAt(text, d.line - 1, d.col - 1) };
+    }
+    return null;
+  }
+
+  // --- formatting ------------------------------------------------------------
+  function formatting({ textDocument }) {
+    const text = docs.get(textDocument.uri);
+    if (text == null) return [];
+    let program; try { program = parse(lex(text)); } catch { return []; } // can't format invalid syntax
+    const out = formatProgram(program);
+    const lines = text.split(/\r?\n/);
+    const end = { line: lines.length - 1, character: (lines[lines.length - 1] || "").length };
+    return [{ range: { start: { line: 0, character: 0 }, end }, newText: out }];
   }
 }
 
@@ -238,9 +313,9 @@ const STDLIB_DOC = {
   Db: "Database access available inside `server fn` bodies.",
   Program: "The Elm-style driver: `run` (headless) / `mount` (real DOM).",
   Nav: "Navigation effects.",
-  Random: "Randomness (stubbed in v0.3).",
-  Decode: "Decoders (stubbed in v0.3).",
-  Json: "JSON (stubbed in v0.3).",
+  Random: "Randomness (stubbed in v0.4).",
+  Decode: "Decoders (stubbed in v0.4).",
+  Json: "JSON (stubbed in v0.4).",
   Bool: "`true | false`.",
   Set: "Sets.",
 };
@@ -254,4 +329,34 @@ const CTOR_DOC = {
   Loading: "`Remote` — request in flight.",
   Failure: "`Remote` — request failed: `Failure(error)`.",
   Success: "`Remote` — request succeeded: `Success(value)`.",
+};
+
+// Keyword set offered by completion.
+const KEYWORDS = [
+  "module", "import", "exposing", "as", "type", "alias", "opaque", "parse",
+  "fn", "server", "let", "if", "then", "else", "match", "not", "and", "or",
+  "true", "false", "unit", "effect",
+];
+
+// Member names per stdlib module (mirrors runtime.js `$P`), used for `Module.`
+// completion. Keep in sync with src/runtime.js.
+const STDLIB_MEMBERS = {
+  Console: ["log", "warn", "error"],
+  String: ["length", "isEmpty", "trim", "toLower", "toUpper", "contains", "startsWith", "endsWith", "split", "join", "slice", "replace", "toList"],
+  Int: ["parse", "toString", "toFloat", "abs", "min", "max", "clamp"],
+  Float: ["parse", "toString", "round", "floor", "ceil", "sqrt", "abs"],
+  List: ["length", "isEmpty", "map", "filter", "foldl", "find", "any", "all", "head", "last", "reverse", "append", "range", "sortBy", "each"],
+  Option: ["map", "andThen", "withDefault", "toResult", "isSome", "isNone"],
+  Result: ["map", "mapErr", "andThen", "withDefault", "map2", "map3", "map4", "map5", "all", "toOption"],
+  Char: ["isAlpha", "isDigit"],
+  Html: ["div", "span", "p", "button", "ul", "li", "label", "input", "text", "empty"],
+  Attr: ["class", "id", "value", "placeholder", "type_", "disabled", "key"],
+  Event: ["onClick", "onInput", "onSubmit", "onBlur"],
+  Cmd: ["none", "batch"],
+  Server: ["call"],
+  Http: ["get", "post"],
+  Nav: ["push"],
+  Db: ["query", "emailExists", "insertUser", "findUser", "errorToString"],
+  Program: ["run", "mount"],
+  Time: ["delay"],
 };

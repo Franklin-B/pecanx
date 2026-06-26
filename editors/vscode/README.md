@@ -2,11 +2,14 @@
 
 Write and compile [PecanX](../../README.md) without leaving the editor.
 
-- **Live diagnostics** — exhaustiveness (`PX0001`), the `?` guard (`PX0100`), and
+- **Live diagnostics** — exhaustiveness (`PX0001`), misplaced `?` (`PX0101`), and
   whole-program Hindley-Milner type errors (`PX0200`) underline the exact `match`,
   declaration, or operator they refer to, as you type. Powered by `pcx lsp`.
 - **Hover** — docs for keywords and stdlib modules, and the signature of any
   top-level function or type in the file.
+- **Completion** — stdlib members after `Module.`, plus local functions, types,
+  constructors, and keywords.
+- **Go to definition** — jump to a local function, type, opaque, sum-variant, or let.
 - **Outline / breadcrumbs** — functions, types (with their variants/fields),
   opaque types, and top-level lets.
 - **Syntax highlighting** for `.px`, including string interpolation and `@`-annotations.
@@ -38,7 +41,7 @@ Then either:
 - **Run it live:** open `editors/vscode` in VS Code and press <kbd>F5</kbd> to launch
   an Extension Development Host with PecanX loaded, or
 - **Package a `.vsix`:** `npm run package` produces `pecanx-<version>.vsix`. Install it
-  with *Extensions → ⋯ → Install from VSIX…*, or `code --install-extension pecanx-0.3.0.vsix`.
+  with *Extensions → ⋯ → Install from VSIX…*, or `code --install-extension pecanx-0.4.0.vsix`.
 
 Open any `.px` file (try `examples/counter/Main.px`) and you'll get squiggles,
 hover, and the PecanX commands.

@@ -291,6 +291,46 @@ try {
   else bad("lsp", out.slice(0, 300));
 }
 
+// --- pcx lsp: completion, definition, formatting ----------------------------
+{
+  const result = await new Promise((res) => {
+    const p = spawn(process.execPath, [PCX, "lsp"]);
+    const msgs = [];
+    let b = Buffer.alloc(0);
+    p.stdout.on("data", (d) => {
+      b = Buffer.concat([b, d]);
+      for (;;) {
+        const he = b.indexOf("\r\n\r\n");
+        if (he < 0) break;
+        const m = /Content-Length:\s*(\d+)/i.exec(b.slice(0, he).toString());
+        if (!m) { b = b.slice(he + 4); continue; }
+        const len = +m[1], start = he + 4;
+        if (b.length < start + len) break;
+        try { msgs.push(JSON.parse(b.slice(start, start + len).toString())); } catch {}
+        b = b.slice(start + len);
+      }
+    });
+    const send = (m) => { const s = JSON.stringify(m); p.stdin.write(`Content-Length: ${Buffer.byteLength(s)}\r\n\r\n${s}`); };
+    const text = "module Demo\n\ntype Color =\n  | Red\n  | Green\n\nfn shade(c: Color): String =\n  match c {\n    Red -> \"r\"\n    Green -> \"g\"\n  }\n\nfn main(): Unit =\n  Console.l\n";
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    send({ jsonrpc: "2.0", method: "textDocument/didOpen", params: { textDocument: { uri: "file:///d.px", text } } });
+    send({ jsonrpc: "2.0", id: 2, method: "textDocument/completion", params: { textDocument: { uri: "file:///d.px" }, position: { line: 13, character: 11 } } });
+    send({ jsonrpc: "2.0", id: 3, method: "textDocument/definition", params: { textDocument: { uri: "file:///d.px" }, position: { line: 6, character: 12 } } });
+    send({ jsonrpc: "2.0", id: 4, method: "textDocument/formatting", params: { textDocument: { uri: "file:///d.px" } } });
+    setTimeout(() => { try { p.kill(); } catch {} res(msgs); }, 1200);
+  });
+  const byId = (id) => result.find((m) => m.id === id);
+  const caps = byId(1) && byId(1).result.capabilities;
+  const comp = byId(2) && byId(2).result;
+  const compOk = comp && comp.items.length === 1 && comp.items[0].label === "log";
+  const def = byId(3) && byId(3).result;
+  const defOk = def && def.uri === "file:///d.px" && def.range.start.line === 2;
+  const fmt = byId(4) && byId(4).result;
+  const fmtOk = fmt && fmt[0] && fmt[0].newText.startsWith("module Demo");
+  if (caps && caps.completionProvider && caps.definitionProvider && caps.documentFormattingProvider && compOk && defOk && fmtOk) ok("lsp: completion + definition + formatting");
+  else bad("lsp extras", `compOk=${compOk} defOk=${defOk} fmtOk=${fmtOk} caps=${JSON.stringify(caps)}`);
+}
+
 // --- pcx dev (serves the real-DOM build) ------------------------------------
 {
   const runtimeSrc = readFileSync(resolve(ROOT, "src/runtime.js"), "utf8");
