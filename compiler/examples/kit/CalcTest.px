@@ -1,0 +1,13 @@
+module CalcTest
+
+import Calc exposing (add, double, clampPos)
+
+fn testAdd(): Bool = add(2, 3) == 5
+
+fn testDouble(): Bool = double(21) == 42
+
+fn testClampNegative(): Bool = clampPos(-7) == 0
+
+fn testClampPositive(): Bool = clampPos(7) == 7
+
+fn testComposition(): Bool = double(add(1, 2)) == 6

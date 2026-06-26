@@ -337,6 +337,40 @@ try {
   else bad("orchard", `status=${addR.status} copied=${copied} recorded=${recorded} linked=${linked}\n${addR.stderr}\n${runR.stderr}`);
 }
 
+// --- pcx test (runs test… functions, reports pass/fail) ---------------------
+{
+  const r = pcx(["test", resolve(ROOT, "examples/kit")]);
+  const passed = r.status === 0 && r.out.includes("5 passed, 0 failed") && r.out.includes("ok   testAdd") && r.out.includes("ok   testComposition");
+  if (passed) ok("test: runs Bool tests across a linked module");
+  else bad("test ok", `status=${r.status}\n${r.out}\n${r.err}`);
+}
+{
+  // a failing test must surface the failure and exit non-zero
+  const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const dir = resolve(tmpdir(), `pcx-test-fail-${stamp}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "FailTest.px"), "module FailTest\nfn testGood(): Bool = 1 == 1\nfn testBad(): Bool = 1 == 2\n");
+  const r = pcx(["test", dir]);
+  if (r.status === 1 && r.out.includes("ok   testGood") && r.out.includes("FAIL testBad") && r.out.includes("1 passed, 1 failed")) ok("test: reports failures and exits non-zero");
+  else bad("test fail", `status=${r.status}\n${r.out}\n${r.err}`);
+}
+
+// --- pcx new (scaffold a runnable project) ----------------------------------
+{
+  const stamp = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  const base = resolve(tmpdir(), `pcx-new-${stamp}`);
+  mkdirSync(base, { recursive: true });
+  const proj = join(base, "myapp");
+  const newR = spawnSync(process.execPath, [PCX, "new", proj], { encoding: "utf8" });
+  const hasFiles = ["pecanx.toml", "Main.px", "MainTest.px", "README.md"].every((f) => existsSync(join(proj, f)));
+  const testR = spawnSync(process.execPath, [PCX, "test"], { cwd: proj, encoding: "utf8" });
+  const checkR = spawnSync(process.execPath, [PCX, "check", "--types", join(proj, "Main.px")], { encoding: "utf8" });
+  const buildR = spawnSync(process.execPath, [PCX, "build", join(proj, "Main.px"), "--target", "dom", "-o", join(proj, "app.html")], { encoding: "utf8" });
+  const builtHtml = existsSync(join(proj, "app.html")) && readFileSync(join(proj, "app.html"), "utf8").includes("Program.mount");
+  if (newR.status === 0 && hasFiles && testR.status === 0 && testR.stdout.includes("4 passed, 0 failed") && checkR.status === 0 && buildR.status === 0 && builtHtml) ok("new: scaffolds a project that runs, tests, type-checks, and builds");
+  else bad("new", `new=${newR.status} files=${hasFiles} test=${testR.status} check=${checkR.status} build=${buildR.status} html=${builtHtml}\n${testR.stdout}\n${newR.stderr}${checkR.stderr}${buildR.stderr}`);
+}
+
 // --- browser-safety ---------------------------------------------------------
 // The playground imports these modules straight into the browser, so they must
 // not reference Node-only globals. Guards against regressions like the Wasm

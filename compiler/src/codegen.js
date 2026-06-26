@@ -35,7 +35,22 @@ export function generateLinked(modules, entryName, opts = {}) {
   const hasMain = !!(entry && entry.program.decls.some((d) => d.kind === "Fn" && d.name === "main"));
   const em = mangle(entryName);
   let js = parts.join("\n\n");
-  if (opts.domMount) {
+  if (opts.tests && opts.tests.length) {
+    const entries = opts.tests.map((n) => `[${q(n)}, ${em}.${n}]`).join(", ");
+    js += `\n\n;(() => {
+  const $T = [${entries}];
+  let p = 0, f = 0;
+  const $sh = (r) => { try { return JSON.stringify(r); } catch (_) { return String(r); } };
+  for (const [n, fn] of $T) {
+    try {
+      const r = fn();
+      if (r === true) { console.log("  ok   " + n); p++; }
+      else { console.log("  FAIL " + n + " — expected true, got " + $sh(r)); f++; }
+    } catch (e) { console.log("  FAIL " + n + " — threw " + ((e && e.message) || e)); f++; }
+  }
+  console.log("__PCX_RESULT__ " + p + " " + f);
+})();\n`;
+  } else if (opts.domMount) {
     js += `\n\n$P.Program.mount(globalThis.document.getElementById("app"), ${em}.init, ${em}.update, ${em}.view);\n`;
   } else if (hasMain) {
     js += `\n\n${em}.main();\n`;

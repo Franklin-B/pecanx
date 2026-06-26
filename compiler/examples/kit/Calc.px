@@ -1,0 +1,9 @@
+module Calc
+
+-- A tiny module under test, exercised by CalcTest.px via `pcx test`.
+
+fn add(a: Int, b: Int): Int = a + b
+
+fn double(n: Int): Int = n * 2
+
+fn clampPos(n: Int): Int = if n < 0 then 0 else n
