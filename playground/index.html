@@ -24,8 +24,12 @@
           <option value="dom">DOM app</option>
           <option value="wasm">WebAssembly</option>
         </select>
+        <button id="btn-new" class="btn" title="Reset to the welcome program">New</button>
         <button id="btn-format" class="btn" title="Format (Shift+Alt+F)">Format</button>
+        <button id="btn-download" class="btn" title="Download this buffer as a .px file">Download</button>
         <button id="btn-share" class="btn" title="Copy a shareable link">Share</button>
+        <button id="btn-theme" class="btn btn-icon" title="Toggle light / dark theme" aria-label="Toggle theme">☾</button>
+        <button id="btn-help" class="btn btn-icon" title="About & keyboard shortcuts" aria-label="Help">?</button>
         <button id="btn-run" class="btn btn-primary" title="Run (Ctrl/Cmd+Enter)">▶ Run</button>
       </div>
     </header>
@@ -78,8 +82,35 @@
       <span id="status-diag" class="status-ok">ready</span>
       <span class="status-spacer"></span>
       <span id="status-pos" class="status-muted">Ln 1, Col 1</span>
-      <span class="status-muted">PecanX v0.3 · pcx in your browser</span>
+      <span class="status-muted">PecanX v0.4 · pcx in your browser</span>
     </footer>
+
+    <div id="help-overlay" class="overlay" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
+        <button id="help-close" class="modal-close" aria-label="Close">×</button>
+        <h2 id="help-title"><span class="logo">◗</span> PecanX</h2>
+        <p class="lead">A correctness-first language for full-stack web apps. Pure logic compiles to one
+          shared <b>Kernel</b> (JS + WebAssembly); interface code compiles to JavaScript. This whole
+          page runs the real <code>pcx</code> compiler in your browser — nothing is sent to a server.</p>
+        <p>It is designed to make four bug families <i>unrepresentable</i>:</p>
+        <ul class="bug-families">
+          <li><code>null</code> / <code>undefined</code> → <b>Option&lt;a&gt;</b></li>
+          <li>unhandled errors → <b>Result&lt;e, a&gt;</b> (no exceptions)</li>
+          <li>impossible UI states → <b>exhaustive</b> sum-type <code>match</code></li>
+          <li>client/server drift → one shared <b>Kernel</b> validates both sides</li>
+        </ul>
+        <h3>Keyboard shortcuts</h3>
+        <table class="keys">
+          <tr><td><kbd>Ctrl/⌘</kbd> + <kbd>Enter</kbd></td><td>Run</td></tr>
+          <tr><td><kbd>Shift</kbd> + <kbd>Alt</kbd> + <kbd>F</kbd></td><td>Format</td></tr>
+          <tr><td><kbd>Tab</kbd></td><td>Insert two spaces</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Close this dialog</td></tr>
+        </table>
+        <p class="foot">Your buffer is saved in this browser automatically. <b>Share</b> puts the program
+          in the URL; <b>Download</b> saves a <code>.px</code> file. Build targets: <b>JS</b> (run),
+          <b>DOM</b> (live app), <b>Wasm</b> (a real <code>.wasm</code> you can download).</p>
+      </div>
+    </div>
 
     <script type="module" src="playground.js"></script>
   </body>

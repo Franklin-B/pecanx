@@ -38,14 +38,48 @@ fn main(): Unit =
   Console.log("Hearts are " ++ color(Hearts))
 `;
 
+const GREETING = `module Form
+
+-- A live DOM app: the view re-renders on every keystroke, and the model is the
+-- single source of truth. \`Event.onInput(SetName)\` passes each value straight to
+-- the SetName constructor (a String -> Msg function).
+
+type alias Model = { name: String }
+
+type Msg = SetName(String)
+
+fn init(): (Model, Cmd<Msg>) =
+  ({ name = "" }, Cmd.none)
+
+fn update(msg: Msg, model: Model): (Model, Cmd<Msg>) =
+  match msg {
+    SetName(n) -> ({ ...model, name = n }, Cmd.none)
+  }
+
+fn greeting(name: String): String =
+  if String.isEmpty(String.trim(name)) then "Type your name…" else "Hello, " ++ name ++ "!"
+
+fn view(model: Model): Html<Msg> =
+  Html.div([Attr.class("form")], [
+    Html.label([], [Html.text("Name")]),
+    Html.input([Attr.placeholder("your name"), Attr.value(model.name), Event.onInput(SetName)]),
+    Html.p([], [Html.text(greeting(model.name))])
+  ])
+`;
+
 // Fetched on demand (paths are relative to the repo, which serves this page).
 const EXAMPLES = [
   { id: "welcome", label: "Welcome", inline: WELCOME },
   { id: "counter", label: "Counter (DOM app)", path: "../examples/counter/Main.px" },
+  { id: "form", label: "Live input form (DOM app)", inline: GREETING },
+  { id: "try", label: "The ? operator (Result / Option)", path: "../compiler/examples/try_demo.px" },
   { id: "signup", label: "Isomorphic validation (console)", path: "../compiler/examples/signup_demo.px" },
   { id: "sumtypes", label: "Sum types → WebAssembly", path: "../compiler/examples/sumtypes.px" },
   { id: "math", label: "Numeric → WebAssembly", path: "../compiler/examples/math.px" },
 ];
+
+const STORAGE_KEY = "pecanx.playground.buffer";
+const THEME_KEY = "pecanx.playground.theme";
 
 // ---------------------------------------------------------------------------
 // DOM refs
@@ -493,6 +527,7 @@ let compileTimer = null;
 function onEdit() {
   renderEditor();
   updateCaret();
+  try { localStorage.setItem(STORAGE_KEY, code.value); } catch {}
   clearTimeout(compileTimer);
   compileTimer = setTimeout(() => {
     const c = compile(code.value);
@@ -522,7 +557,44 @@ code.addEventListener("keydown", (e) => {
 $("btn-run").addEventListener("click", run);
 $("btn-format").addEventListener("click", formatBuffer);
 $("btn-share").addEventListener("click", share);
+$("btn-new").addEventListener("click", () => { setBuffer(WELCOME); run(); });
+$("btn-download").addEventListener("click", downloadBuffer);
+$("btn-theme").addEventListener("click", toggleTheme);
+$("btn-help").addEventListener("click", () => showHelp(true));
 targetSel.addEventListener("change", () => renderDiagnostics(compile(code.value)));
+
+// ---------------------------------------------------------------------------
+// Theme, download, and the help/about modal
+// ---------------------------------------------------------------------------
+
+function loadTheme() { try { return localStorage.getItem(THEME_KEY) || "dark"; } catch { return "dark"; } }
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $("btn-theme").textContent = theme === "light" ? "☀" : "☾";
+}
+function toggleTheme() {
+  const next = (document.documentElement.dataset.theme === "light") ? "dark" : "light";
+  applyTheme(next);
+  try { localStorage.setItem(THEME_KEY, next); } catch {}
+  // repaint the highlight overlay so token colors pick up the new theme immediately
+  renderEditor();
+}
+
+function downloadBuffer() {
+  const name = (compile(code.value).name || "playground").replace(/[^A-Za-z0-9_.-]/g, "_");
+  const blob = new Blob([code.value], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}.px`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+const helpOverlay = $("help-overlay");
+function showHelp(on) { helpOverlay.hidden = !on; }
+$("help-close").addEventListener("click", () => showHelp(false));
+helpOverlay.addEventListener("click", (e) => { if (e.target === helpOverlay) showHelp(false); });
+window.addEventListener("keydown", (e) => { if (e.key === "Escape" && !helpOverlay.hidden) showHelp(false); });
 
 // ---------------------------------------------------------------------------
 // Examples
@@ -564,9 +636,13 @@ function setBuffer(src) {
 // ---------------------------------------------------------------------------
 
 function boot() {
+  applyTheme(loadTheme());
   measureMetrics();
   const fromHash = decodeHash();
-  setBuffer(fromHash != null ? fromHash : WELCOME);
+  let stored = null;
+  try { stored = localStorage.getItem(STORAGE_KEY); } catch {}
+  // precedence: a shared link (#code=…) > your last local buffer > the welcome program
+  setBuffer(fromHash != null ? fromHash : (stored != null && stored !== "" ? stored : WELCOME));
   // first compile + auto-run for an immediate result
   const c = compile(code.value);
   renderDiagnostics(c);

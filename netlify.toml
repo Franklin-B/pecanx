@@ -1,0 +1,10 @@
+# Deploy the PecanX playground to Netlify.
+#   `node playground/build.mjs` assembles a self-contained static site in dist/.
+#
+# No custom MIME headers are needed: the playground fetches `.px` examples with
+# `fetch().text()` (content type is irrelevant), compiles `.wasm` client-side from
+# an in-memory Blob (none are served), and loads the compiler as ES modules (served
+# with the correct `text/javascript` by default).
+[build]
+  command = "node playground/build.mjs"
+  publish = "dist"

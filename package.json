@@ -1,0 +1,28 @@
+{
+  "name": "pecanx",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "description": "A correctness-first language for full-stack web apps — compiles pure logic to one shared WebAssembly Kernel and interface code to JavaScript.",
+  "homepage": "https://github.com/Franklin-B/PecanX",
+  "license": "MIT",
+  "bin": {
+    "pcx": "compiler/pcx.js",
+    "orchard": "compiler/orchard.js"
+  },
+  "scripts": {
+    "test": "node compiler/tests/run.js",
+    "dev": "node playground/serve.mjs",
+    "build": "node playground/build.mjs",
+    "preview": "node playground/serve.mjs dist",
+    "fmt": "node compiler/pcx.js fmt"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "compiler",
+    "playground",
+    "docs"
+  ]
+}

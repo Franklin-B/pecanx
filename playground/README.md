@@ -23,7 +23,7 @@ reachable as siblings.)
 
 ## What it does
 
-- **Live diagnostics** — exhaustiveness (`PX0001`), the `?` guard (`PX0100`), and
+- **Live diagnostics** — exhaustiveness (`PX0001`), misplaced `?` (`PX0101`), and
   whole-program type errors (`PX0200`) appear as red squiggles and in the Problems
   tab as you type, with precise line/column ranges. Same checker as `pcx check --types`.
 - **Run** (Ctrl/Cmd + Enter) — auto-detects the target:
@@ -36,8 +36,11 @@ reachable as siblings.)
 - **JS tab** — the exact JavaScript `pcx build` would emit.
 - **Format** (Shift+Alt+F) — runs the real `pcx fmt`.
 - **Share** — encodes your buffer into the URL so you can send a link.
-- **Examples** — Counter (DOM), isomorphic validation (console), sum types and
-  numeric code (Wasm).
+- **Download** — saves the current buffer as a `.px` file.
+- **New / theme / help** — reset to the welcome program, toggle light/dark, or open
+  an about-and-shortcuts dialog. Your buffer and theme persist in `localStorage`.
+- **Examples** — Counter (DOM), a live input form (DOM), the `?` operator
+  (`Result`/`Option`), isomorphic validation (console), sum types and numeric code (Wasm).
 
 ## How it's wired
 
@@ -49,3 +52,22 @@ playground.js  ──imports──►  ../compiler/src/{lexer,parser,check,types
 
 Everything executes in a `sandbox="allow-scripts"` iframe, so the page itself is
 never affected by the code you run.
+
+## Build & deploy
+
+`playground/build.mjs` assembles a **self-contained static site** into `dist/` —
+the landing page, the IDE, and a copy of the browser-safe compiler modules and the
+example sources, mirroring the repo layout so every relative import still resolves.
+No bundler, no dependencies.
+
+```bash
+npm run build                      # → dist/  (node playground/build.mjs)
+npm run preview                    # serve the built site (node playground/serve.mjs dist)
+# → http://localhost:5173/
+```
+
+`dist/` is a plain static folder; deploy it to any host. Configs are included for
+**Vercel** (`vercel.json`), **Netlify** (`netlify.toml`), and **GitHub Pages**
+(`.github/workflows/pages.yml`) — each runs `node playground/build.mjs` and
+publishes `dist/`. The example loader is path-driven, so new examples added to the
+`EXAMPLES` list in `playground.js` are bundled automatically.

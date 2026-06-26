@@ -7,6 +7,7 @@ dist/
 *.mjs
 # ...but these hand-written .mjs sources are not build output
 !playground/serve.mjs
+!playground/build.mjs
 !editors/vscode/scripts/make-icon.mjs
 
 # editor / tooling local state
