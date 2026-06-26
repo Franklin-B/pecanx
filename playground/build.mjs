@@ -22,6 +22,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 const DIST = resolve(ROOT, "dist");
 
+const SITE = "https://franklin-b.github.io/pecanx";
+const DESC = "PecanX compiles pure logic to one shared WebAssembly Kernel that runs identically on client and server, and interface code to JavaScript — making null, unhandled errors, impossible UI states, and client/server drift unrepresentable.";
+
 // Browser-safe compiler modules the playground imports (must stay Node-global free).
 const SRC_MODULES = ["lexer", "parser", "check", "types", "codegen", "wasm", "format", "runtime"];
 
@@ -46,14 +49,24 @@ function discoverExamplePaths() {
   return [...new Set(out)];
 }
 
-function landingHtml() {
+function landingHtml(ogImage) {
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PecanX — a correctness-first language for the web</title>
-    <meta name="description" content="PecanX compiles pure logic to one shared WebAssembly Kernel that runs identically on client and server, and interface code to JavaScript — making null, unhandled errors, impossible UI states, and client/server drift unrepresentable." />
+    <meta name="description" content="${DESC}" />
+    <link rel="canonical" href="${SITE}/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="${SITE}/" />
+    <meta property="og:title" content="PecanX — a correctness-first language for the web" />
+    <meta property="og:description" content="${DESC}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PecanX — a correctness-first language for the web" />
+    <meta name="twitter:description" content="${DESC}" />${ogImage ? `
+    <meta property="og:image" content="${ogImage}" />
+    <meta name="twitter:image" content="${ogImage}" />` : ""}
     <style>
       :root { --bg:#0e1014; --bg2:#14171d; --panel:#11141a; --border:#262b35; --fg:#e6e8ec; --dim:#9aa3b2; --muted:#6b7385; --accent:#c98a3a; --accent2:#e0a965; --ok:#5bbf86; --ctor:#69c6c0; --type:#6cb6e6; }
       * { box-sizing: border-box; }
@@ -146,8 +159,16 @@ function main() {
   for (const m of SRC_MODULES) copied.push(copy(`compiler/src/${m}.js`));
   // example sources the IDE loads on demand
   for (const p of discoverExamplePaths()) copied.push(copy(p));
+  // social card: host the SVG at the site root; reference a rasterized PNG for
+  // og:image only when one exists (see scripts/make-social.js), so the card is
+  // never broken.
+  let ogImage = null;
+  const svgSrc = resolve(ROOT, ".github/social-preview.svg");
+  if (existsSync(svgSrc)) cpSync(svgSrc, join(DIST, "social-preview.svg"));
+  const pngSrc = resolve(ROOT, ".github/social-preview.png");
+  if (existsSync(pngSrc)) { cpSync(pngSrc, join(DIST, "social-preview.png")); ogImage = `${SITE}/social-preview.png`; }
   // landing page
-  writeFileSync(join(DIST, "index.html"), landingHtml());
+  writeFileSync(join(DIST, "index.html"), landingHtml(ogImage));
 
   console.log(`✓ built dist/ (${copied.length + 1} files)`);
   console.log(`  landing:    dist/index.html`);

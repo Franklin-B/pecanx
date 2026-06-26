@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Try PecanX in the playground
+    url: https://franklin-b.github.io/pecanx/
+    about: Reproduce or explore in the in-browser IDE before filing.
+  - name: Documentation & language manual
+    url: https://github.com/Franklin-B/pecanx/tree/master/docs
+    about: The full manual, grammar, and diagnostics reference.
