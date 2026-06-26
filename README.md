@@ -1,5 +1,11 @@
 # PecanX
 
+[![Deploy site](https://github.com/Franklin-B/pecanx/actions/workflows/pages.yml/badge.svg)](https://github.com/Franklin-B/pecanx/actions/workflows/pages.yml)
+[![Playground](https://img.shields.io/badge/playground-live-c98a3a)](https://franklin-b.github.io/pecanx/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**▶ Try it now — [franklin-b.github.io/pecanx](https://franklin-b.github.io/pecanx/)** — the playground runs the real `pcx` compiler entirely in your browser. No install, no account.
+
 **A correctness-first language for full-stack web applications.** PecanX compiles
 your pure logic to a single **Kernel** (a WebAssembly module that runs identically
 on the client and the server) and your interface code to JavaScript — so the

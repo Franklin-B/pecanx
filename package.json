@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "A correctness-first language for full-stack web apps — compiles pure logic to one shared WebAssembly Kernel and interface code to JavaScript.",
-  "homepage": "https://github.com/Franklin-B/PecanX",
+  "homepage": "https://franklin-b.github.io/pecanx/",
   "license": "MIT",
   "bin": {
     "pcx": "compiler/pcx.js",

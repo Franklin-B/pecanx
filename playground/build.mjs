@@ -92,7 +92,7 @@ function landingHtml() {
           <b>WebAssembly Kernel</b> that runs identically on client and server; interface code compiles to JavaScript.</p>
         <div class="cta">
           <a class="btn primary" href="./playground/">Open the Playground →</a>
-          <a class="btn" href="https://github.com/Franklin-B/PecanX">Source &amp; docs</a>
+          <a class="btn" href="https://github.com/Franklin-B/pecanx">Source &amp; docs</a>
         </div>
       </header>
 
@@ -127,7 +127,7 @@ pcx dev Main.px</pre>
       <footer>
         Built with <code>pcx</code> v0.4. The playground runs the real compiler entirely in your browser.
         · <a href="./playground/">Playground</a>
-        · <a href="https://github.com/Franklin-B/PecanX">GitHub</a>
+        · <a href="https://github.com/Franklin-B/pecanx">GitHub</a>
       </footer>
     </div>
   </body>
