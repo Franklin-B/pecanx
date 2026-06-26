@@ -1,11 +1,11 @@
-// PecanX static checks (pcx v0.3).
+// PecanX static checks (pcx v0.4).
 //
-// v0.3 ships the language's signature check — `match` exhaustiveness — plus a
-// scan for the `?` operator (not yet supported by the JS backend). Full
-// Hindley-Milner type inference is on the roadmap (see appendix-b-reference.md);
-// this checker is deliberately conservative: it only reports a non-exhaustive
-// match when it can identify the scrutinee's sum type from the constructors used,
-// so it never emits a false positive.
+// This is the language's signature check — `match` exhaustiveness — plus a guard
+// that the `?` operator only appears inside a function/lambda body (PX0101).
+// Whole-program Hindley-Milner type inference lives separately in types.js
+// (`--types`). This checker is deliberately conservative: it only reports a
+// non-exhaustive match when it can identify the scrutinee's sum type from the
+// constructors used, so it never emits a false positive.
 
 const BUILTIN_TYPES = {
   Result: ["Ok", "Err"],
@@ -29,8 +29,8 @@ export function check(program) {
   }
 
   for (const d of program.decls) {
-    if (d.kind === "Fn") walk(d.body);
-    else if (d.kind === "Let") walk(d.expr);
+    if (d.kind === "Fn") walk(d.body, true);    // a fn body may early-return via `?`
+    else if (d.kind === "Let") walk(d.expr, false); // top-level let: only inside a lambda
   }
   return diags;
 
@@ -60,31 +60,33 @@ export function check(program) {
     }
   }
 
-  function walk(e) {
+  // `canTry` is true wherever a `?` would have an enclosing function/lambda to
+  // early-return from. It flips on at every lambda body and every fn body.
+  function walk(e, canTry) {
     if (!e || typeof e !== "object") return;
     switch (e.kind) {
       case "Match":
         checkMatch(e);
-        walk(e.scrutinee);
-        for (const a of e.arms) { if (a.guard) walk(a.guard); walk(a.body); }
+        walk(e.scrutinee, canTry);
+        for (const a of e.arms) { if (a.guard) walk(a.guard, canTry); walk(a.body, canTry); }
         return;
       case "Try":
-        diags.push({ severity: "error", code: "PX0100", message: "The `?` operator is not yet supported by the pcx v0.3 backend.", line: e.line, col: e.col });
-        walk(e.expr); return;
+        if (!canTry) diags.push({ severity: "error", code: "PX0101", message: "The `?` operator may only be used inside a function or lambda body.", line: e.line, col: e.col });
+        walk(e.expr, canTry); return;
       case "StrInterp":
-        for (const p of e.parts) if (p.kind === "expr") walk(p.expr);
+        for (const p of e.parts) if (p.kind === "expr") walk(p.expr, canTry);
         return;
-      case "Field": walk(e.obj); return;
-      case "Call": walk(e.callee); (e.named ? e.args.map((a) => a.expr) : e.args).forEach(walk); return;
-      case "Lambda": walk(e.body); return;
-      case "If": walk(e.cond); walk(e.then); walk(e.else); return;
-      case "Block": e.bindings.forEach((b) => walk(b.expr)); walk(e.result); return;
-      case "BinOp": walk(e.left); walk(e.right); return;
-      case "UnOp": walk(e.operand); return;
-      case "Record": e.fields.forEach((f) => walk(f.expr)); return;
-      case "RecordUpdate": walk(e.base); e.fields.forEach((f) => walk(f.expr)); return;
-      case "Tuple": case "List": e.items.forEach((it) => walk(it && it.kind === "Spread" ? it.expr : it)); return;
-      case "Pipe": walk(e.left); walk(e.right); return;
+      case "Field": walk(e.obj, canTry); return;
+      case "Call": walk(e.callee, canTry); (e.named ? e.args.map((a) => a.expr) : e.args).forEach((x) => walk(x, canTry)); return;
+      case "Lambda": walk(e.body, true); return; // a lambda body may early-return via `?`
+      case "If": walk(e.cond, canTry); walk(e.then, canTry); walk(e.else, canTry); return;
+      case "Block": e.bindings.forEach((b) => walk(b.expr, canTry)); walk(e.result, canTry); return;
+      case "BinOp": walk(e.left, canTry); walk(e.right, canTry); return;
+      case "UnOp": walk(e.operand, canTry); return;
+      case "Record": e.fields.forEach((f) => walk(f.expr, canTry)); return;
+      case "RecordUpdate": walk(e.base, canTry); e.fields.forEach((f) => walk(f.expr, canTry)); return;
+      case "Tuple": case "List": e.items.forEach((it) => walk(it && it.kind === "Spread" ? it.expr : it, canTry)); return;
+      case "Pipe": walk(e.left, canTry); walk(e.right, canTry); return;
       default: return; // Lit, Var
     }
   }

@@ -65,6 +65,18 @@ const RUN = [
       "combine = sum 3",
     ].join("\n"),
   },
+  {
+    name: "try_demo runs (? over Result and Option)",
+    file: "examples/try_demo.px",
+    expect: [
+      "OK   Ada (age 36)",
+      "FAIL a field was empty",
+      "FAIL age must be positive",
+      "FAIL age must be a number",
+      "sum of ends = 8",
+      "list was empty",
+    ].join("\n"),
+  },
 ];
 
 for (const t of RUN) {
@@ -120,6 +132,7 @@ for (const f of CHECK_OK) {
 // --- files that should be rejected ------------------------------------------
 const CHECK_FAIL = [
   { file: resolve(ROOT, "examples/nonexhaustive.px"), code: "PX0001" },
+  { file: resolve(ROOT, "examples/try_toplevel_bad.px"), code: "PX0101" },
 ];
 
 for (const t of CHECK_FAIL) {
@@ -130,7 +143,7 @@ for (const t of CHECK_FAIL) {
 
 // --- type inference (HM) ----------------------------------------------------
 const TYPES_OK = [
-  "examples/types/ok.px", "examples/math.px",
+  "examples/types/ok.px", "examples/math.px", "examples/try_demo.px",
   "../examples/todo/Main.px", "../examples/remote-users/Main.px", "../examples/counter/Main.px",
   "../examples/todo/Demo.px", // multi-module (Demo → Main → Domain) under linked inference
 ];
@@ -155,7 +168,7 @@ for (const [n, frag] of TYPES_BAD) {
 // Structure comparison ignores source positions (line/col), which are incidental
 // metadata that naturally shifts when code is reformatted.
 const stripPos = (v) => JSON.stringify(v, (k, val) => (k === "line" || k === "col" ? undefined : val));
-for (const f of ["examples/signup_demo.px", "examples/sumtypes.px", "../examples/todo/Main.px"]) {
+for (const f of ["examples/signup_demo.px", "examples/sumtypes.px", "examples/try_demo.px", "../examples/todo/Main.px"]) {
   try {
     const src = readFileSync(resolve(ROOT, f), "utf8");
     const a1 = parse(lex(src));

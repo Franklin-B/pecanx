@@ -1,4 +1,4 @@
-// PecanX → JavaScript code generator (pcx v0.3).
+// PecanX → JavaScript code generator (pcx v0.4).
 
 import { STDLIB } from "./parser.js";
 
@@ -84,7 +84,9 @@ function genDecl(d) {
     case "Opaque":
       return `function ${d.name}(_0) { return { $: ${q(d.name)}, _0 }; }\n${d.name}.unwrap = (x) => x._0;`;
     case "Fn":
-      return `function ${d.name}(${d.params.join(", ")}) { return ${genExpr(d.body)}; }`;
+      return usesTry(d.body)
+        ? `function ${d.name}(${d.params.join(", ")}) { try { return ${genExpr(d.body)}; } catch ($e) { if ($e instanceof $Short) return $e.value; throw $e; } }`
+        : `function ${d.name}(${d.params.join(", ")}) { return ${genExpr(d.body)}; }`;
     case "Let":
       return `const ${d.name} = ${genExpr(d.expr)};`;
     default:
@@ -107,7 +109,9 @@ function genExpr(e) {
       if (e.named) return genNamedCtor(e);
       return `${genExpr(e.callee)}(${e.args.map(genExpr).join(", ")})`;
     case "Lambda":
-      return `((${e.params.join(", ")}) => ${genExpr(e.body)})`;
+      return usesTry(e.body)
+        ? `((${e.params.join(", ")}) => { try { return ${genExpr(e.body)}; } catch ($e) { if ($e instanceof $Short) return $e.value; throw $e; } })`
+        : `((${e.params.join(", ")}) => ${genExpr(e.body)})`;
     case "If":
       return `(${genExpr(e.cond)} ? ${genExpr(e.then)} : ${genExpr(e.else)})`;
     case "Match":
@@ -129,7 +133,7 @@ function genExpr(e) {
     case "Pipe":
       return `${genExpr(e.right)}(${genExpr(e.left)})`;
     case "Try":
-      throw new CodegenError("The `?` operator is not supported by the pcx v0.3 JS backend yet.");
+      return `$try(${genExpr(e.expr)})`;
     default:
       throw new CodegenError(`Cannot generate expression: ${e.kind}`);
   }
@@ -231,6 +235,28 @@ function genPattern(pat, acc) {
       return { test: `${acc} !== null && typeof ${acc} === "object"`, binds: pat.fields.map((f) => [f, `${acc}.${f}`]) };
     default:
       throw new CodegenError(`Cannot generate pattern: ${pat.kind}`);
+  }
+}
+
+// Does this expression use the `?` operator at *this* function/lambda level?
+// Stops at nested lambdas — each lambda owns (and catches) its own `?`.
+function usesTry(e) {
+  if (!e || typeof e !== "object") return false;
+  switch (e.kind) {
+    case "Try": return true;
+    case "Lambda": return false;
+    case "StrInterp": return e.parts.some((p) => p.kind === "expr" && usesTry(p.expr));
+    case "Field": return usesTry(e.obj);
+    case "Call": return usesTry(e.callee) || (e.named ? e.args.map((a) => a.expr) : e.args).some(usesTry);
+    case "If": return usesTry(e.cond) || usesTry(e.then) || usesTry(e.else);
+    case "Match": return usesTry(e.scrutinee) || e.arms.some((a) => (a.guard && usesTry(a.guard)) || usesTry(a.body));
+    case "Block": return e.bindings.some((b) => usesTry(b.expr)) || usesTry(e.result);
+    case "BinOp": case "Pipe": return usesTry(e.left) || usesTry(e.right);
+    case "UnOp": return usesTry(e.operand);
+    case "Record": return e.fields.some((f) => usesTry(f.expr));
+    case "RecordUpdate": return usesTry(e.base) || e.fields.some((f) => usesTry(f.expr));
+    case "Tuple": case "List": return e.items.some((it) => usesTry(it && it.kind === "Spread" ? it.expr : it));
+    default: return false;
   }
 }
 

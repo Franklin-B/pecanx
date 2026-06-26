@@ -1,0 +1,4 @@
+module Bad
+
+-- `?` has no enclosing function to early-return from here → PX0101.
+let oops = Some(1)?

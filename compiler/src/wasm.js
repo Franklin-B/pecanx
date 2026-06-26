@@ -1,4 +1,4 @@
-// PecanX → WebAssembly backend (pcx v0.3).
+// PecanX → WebAssembly backend (pcx v0.4).
 //
 // A type-directed emitter producing a real .wasm binary (no dependencies, no
 // external assembler). Coverage:
@@ -7,9 +7,10 @@
 //   sum types whose payloads are all Int → tagged WasmGC structs
 //              { tag:i32, p0:i32, ... } with `match` dispatching on the tag;
 //   strings  → WasmGC array<i8> from a passive data segment (literals +
-//              String.length via array.len);
-//   function values → funcref params + call_ref (first-class top-level functions).
-// Lexical-capture closures stay on the JS backend (they need closure conversion).
+//              String.length via array.len).
+// First-class function values (funcref + call_ref) and lexical-capture closures
+// stay on the JS backend; functions that take/return functions, or use `?`, are
+// reported as skipped (not Wasm-eligible). See appendix-b-reference.md § B.6.
 
 export function compileWasm(program) {
   // ---- declared types ------------------------------------------------------

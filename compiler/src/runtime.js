@@ -1,4 +1,4 @@
-// PecanX runtime prelude (pcx v0.3).
+// PecanX runtime prelude (pcx v0.4).
 //
 // This file is NOT imported — `pcx` reads it as text and prepends it to every
 // compiled program, producing a single self-contained JS module. It therefore
@@ -27,6 +27,16 @@ function $concat(a, b) {
   throw new Error("(++) expects two Strings or two Lists");
 }
 
+// --- the `?` operator (early-return for Result / Option) --------------------
+// `e?` unwraps an Ok/Some to its payload; on Err/None it throws a sentinel that
+// the enclosing function (or lambda) catches and returns from. Codegen wraps any
+// `fn`/lambda body that uses `?` in a try/catch for this sentinel.
+class $Short { constructor(value) { this.value = value; } }
+function $try(r) {
+  if (r != null && (r.$ === "Ok" || r.$ === "Some")) return r._0;
+  throw new $Short(r); // Err(e) / None (or any non-Ok/Some) short-circuits
+}
+
 const $unit = null;
 
 // --- built-in sum-type constructors -----------------------------------------
@@ -44,7 +54,7 @@ function $stub(name) {
   return new Proxy({}, {
     get: (_t, prop) => (...args) => {
       throw new Error(
-        "pcx v0.3: " + name + "." + String(prop) +
+        "pcx v0.4: " + name + "." + String(prop) +
         " is not executable yet (UI/effect/FFI backends are pending — see docs/appendix-b-reference.md)"
       );
     },
@@ -277,7 +287,7 @@ const $P = {
     isDigit: (c) => /^[0-9]$/.test(c),
   },
 
-  // --- view layer (renders to a string in the headless v0.3 runtime) --------
+  // --- view layer (renders to a string in the headless v0.4 runtime) --------
   Html: {
     div: (a, k) => $node("div", a, k),
     span: (a, k) => $node("span", a, k),

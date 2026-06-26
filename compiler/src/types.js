@@ -1,4 +1,4 @@
-// PecanX type inference (pcx v0.3) — Hindley-Milner with unification,
+// PecanX type inference (pcx v0.4) — Hindley-Milner with unification,
 // let-generalization, and an occurs check.
 //
 // Opt-in (`pcx check --types`). It infers and checks the functional core —
@@ -275,7 +275,15 @@ function infer(e, env, ctx) {
     }
     case "Spread": return infer(e.expr, env, ctx);
     case "Pipe": { const l = infer(e.left, env, ctx); const f = infer(e.right, env, ctx); const res = tvar(); unify(f, tfn([l], res)); return res; }
-    case "Try": return tvar();
+    case "Try": {
+      // `e?` unwraps Result<e, a> / Option<a> to its payload `a`. When the inner
+      // type is concretely known we return `a`; otherwise stay polymorphic so the
+      // conservative checker never false-positives on `?` over an opaque value.
+      const it = prune(infer(e.expr, env, ctx));
+      if (it.k === "con" && it.name === "Result" && it.args.length === 2) return it.args[1];
+      if (it.k === "con" && it.name === "Option" && it.args.length === 1) return it.args[0];
+      return tvar();
+    }
     default: return tvar();
   }
 }

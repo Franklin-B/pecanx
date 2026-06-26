@@ -1,0 +1,49 @@
+module TryDemo
+
+-- The `?` operator: short-circuit on Err / None, unwrap on Ok / Some.
+-- A function that uses `?` returns early with the Err/None, so the happy path
+-- reads as a straight line of `let` bindings.
+
+type Form = { name: String, age: Int }
+
+parse nonEmpty(s: String): Result<String, String> =
+  let t = String.trim(s)
+  if String.isEmpty(t) then Err("a field was empty") else Ok(t)
+
+parse positiveAge(s: String): Result<String, Int> =
+  match Int.parse(s) {
+    Some(n) -> if n > 0 then Ok(n) else Err("age must be positive")
+    None    -> Err("age must be a number")
+  }
+
+-- Result `?`: any Err returned by a step becomes the result of mkForm.
+fn mkForm(name: String, age: String): Result<String, Form> =
+  let n = nonEmpty(name)?
+  let a = positiveAge(age)?
+  Ok({ name = n, age = a })
+
+fn show(r: Result<String, Form>): String =
+  match r {
+    Ok(f)  -> "OK   " ++ f.name ++ " (age " ++ Int.toString(f.age) ++ ")"
+    Err(e) -> "FAIL " ++ e
+  }
+
+-- Option `?`: a missing head short-circuits the whole function to None.
+fn endpoints(xs: List<Int>): Option<Int> =
+  let first = List.head(xs)?
+  let last = List.head(List.reverse(xs))?
+  Some(first + last)
+
+fn showOpt(o: Option<Int>): String =
+  match o {
+    Some(n) -> "sum of ends = " ++ Int.toString(n)
+    None    -> "list was empty"
+  }
+
+fn main(): Unit =
+  let _ = Console.log(show(mkForm("Ada", "36")))
+  let _ = Console.log(show(mkForm("", "36")))
+  let _ = Console.log(show(mkForm("Bob", "-3")))
+  let _ = Console.log(show(mkForm("Cleo", "x")))
+  let _ = Console.log(showOpt(endpoints([3, 4, 5])))
+  Console.log(showOpt(endpoints([])))
