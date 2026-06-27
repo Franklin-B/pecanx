@@ -13,3 +13,10 @@ dist/
 # editor / tooling local state
 .claude/settings.local.json
 *.vsix
+
+# Secrets & deploy state (added 2026-06-27 — hygiene)
+.env
+.env.*
+!.env.example
+.vercel/
+*-key.json

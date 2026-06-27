@@ -1,7 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node playground/build.mjs",
-  "outputDirectory": "dist",
-  "cleanUrls": true,
-  "framework": null
-}
